@@ -284,7 +284,7 @@ def parseXML(trackletFile):
 #end: function parseXML
 
 
-def parse_XML(tracklet_path=None,op_name=None,nf=None,object_of_interest=None):
+def parse_XML(tracklet_path,nf,object_of_interest=None):
 
   from os.path import join, expanduser
   import readline    # makes raw_input behave more fancy
@@ -349,8 +349,6 @@ def parse_XML(tracklet_path=None,op_name=None,nf=None,object_of_interest=None):
         yaw_visual_col = np.zeros((3,1))+yawVisual
         ray_angle = np.zeros((3,1))+np.arctan2(y, x)
 
-        
-        
         frames[absoluteFrameNumber].append(np.concatenate([cornerPosInVelo,label_col,yaw_col,yaw_visual_col,ray_angle,
           np.repeat(np.asarray([[l,w,h,x,y,z]]),3,axis=0)],axis=1))
         #frames[absoluteFrameNumber].append((l,w,h,tracklet.objectType))
@@ -359,11 +357,11 @@ def parse_XML(tracklet_path=None,op_name=None,nf=None,object_of_interest=None):
         
       #end: for all frames in track
     #end: for all tracks
-  
-  with open(op_name, 'wb') as f:
-    pkl.dump(frames, f, protocol=pkl.HIGHEST_PROTOCOL)
+  return frames
+  # with open(op_name, 'wb') as f:
+  #   pkl.dump(frames, f, protocol=pkl.HIGHEST_PROTOCOL)
 
-  print "Annotations Stored in the pickle file!!!!!!!!!!!!!"
+  # print "Annotations Stored in the pickle file!!!!!!!!!!!!!"
 #end: function example
 
 # when somebody runs this file as a script: 
