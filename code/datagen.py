@@ -174,15 +174,6 @@ class DataLoader(object):
 			cv2.imwrite('res_3d_vis_{}.png'.format(i),img_bgr)
 
 
-
-	
-
-
-   
-
-
-
-
 if __name__ == '__main__':
 	data_root = '/home/ishan/Downloads/KITTI_DATA'
 	seq_id = 1
