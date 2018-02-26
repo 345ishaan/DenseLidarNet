@@ -5,6 +5,8 @@ from PIL import Image, ImageDraw,ImageFont
 import cv2
 from parseTrackletXML import *
 from ipdb import set_trace as brk
+import pickle
+
 
 class DataLoader(object):
 
@@ -24,10 +26,21 @@ class DataLoader(object):
 		self.bev_x_range=[-70.0,70.0]
 		self.bev_y_range=[-30.0,30.0]
 
+		dir = os.path.dirname(__file__)
+		self.video_dir_path = os.path.join(dir, '../videos/')
+		self.gt_lidar_path = os.path.join(dir, '../pickles/')
+
+		self.fourcc = cv2.VideoWriter_fourcc(*'XVID')
+		self.bev_video = cv2.VideoWriter(self.video_dir_path + 'bev_video_seq_'+ str(self.seq_id) + '.avi',self.fourcc,30.0,(600, 1400))
+		self.res_3d_video = cv2.VideoWriter(self.video_dir_path + 'res_3d_video_seq_'+ str(self.seq_id) + '.avi',self.fourcc,30.0,(1242, 375))
+
+
 		self.counter =0
 		self.num_frames = len(self.image_paths)
 		self.objects = ['Car','Van','Truck']
 		self.load_projection_matrices()
+
+		self.filtered_lidar_pts = []
 	
 
 	def load_projection_matrices(self):
@@ -170,13 +183,21 @@ class DataLoader(object):
 				global_bev = global_bev + bird_view
 				self.draw_3d_box(pts_in_image,img_bgr)
 				# self.draw_rectangle_cv(img_bgr,bbox)
-			cv2.imwrite('bird_view_{}.png'.format(i),global_bev*255)
-			cv2.imwrite('res_3d_vis_{}.png'.format(i),img_bgr)
+			# cv2.imwrite('bird_view_{}_tushar.png'.format(i),global_bev*255)
+			# cv2.imwrite('res_3d_vis_{}_tushar.png'.format(i),img_bgr)
+			self.filtered_lidar_pts.append(cor_pts)
+			self.bev_video.write(np.array(global_bev*255, dtype=np.uint8))
+			self.res_3d_video.write(img_bgr)
+		self.bev_video.release()
+		self.res_3d_video.release()
+		with open(self.gt_lidar_path + str(self.seq_id) + '.pkl', 'wb') as f:
+			pickle.dump(self.filtered_lidar_pts, f)
 
 
 if __name__ == '__main__':
-	data_root = '/home/ishan/Downloads/KITTI_DATA'
-	seq_id = 1
+# 	data_root = '/home/ishan/Downloads/KITTI_DATA'
+	data_root = '../KITTI_data'
+	seq_id = 35
 	loader = DataLoader(data_root,seq_id)
 	loader.get_all_annt()
 
