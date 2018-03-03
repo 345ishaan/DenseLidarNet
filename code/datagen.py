@@ -1,21 +1,21 @@
 import  sys
 import os
 import glob
-from PIL import Image, ImageDraw,ImageFont
+# from PIL import Image, ImageDraw,ImageFont
 import cv2
 from parseTrackletXML import *
 from ipdb import set_trace as brk
-import pickle
+import h5py
 
 
 class DataLoader(object):
 
 	def __init__(self,data_root,seq_id):
 		self.data_root = data_root
-		self.seq_id = str(seq_id)
-		self.lidar_root = os.path.join(self.data_root,self.seq_id,'velodyne_points','data')
-		self.image_root = os.path.join(self.data_root,self.seq_id,'image_02','data')
-		self.tracklet_path = os.path.join(self.data_root,self.seq_id,'tracklet_labels.xml')
+		self.seq_id = seq_id
+		self.lidar_root = os.path.join(self.data_root, '2011_09_26_drive_' + self.seq_id + '_sync','velodyne_points','data')
+		self.image_root = os.path.join(self.data_root,'2011_09_26_drive_' + self.seq_id + '_sync','image_02','data')
+		self.tracklet_path = os.path.join(self.data_root, '2011_09_26_drive_' + self.seq_id + '_sync','tracklet_labels.xml')
 
 		self.image_paths = sorted(glob.glob(os.path.join(self.image_root,'*.png')))
 		self.lidar_paths = sorted(glob.glob(os.path.join(self.lidar_root,'*.bin')))
@@ -28,11 +28,11 @@ class DataLoader(object):
 
 		dir = os.path.dirname(__file__)
 		self.video_dir_path = os.path.join(dir, '../videos/')
-		self.gt_lidar_path = os.path.join(dir, '../pickles/')
+		self.gt_path = os.path.join(dir, '../ground_truth/')
 
 		self.fourcc = cv2.VideoWriter_fourcc(*'XVID')
-		self.bev_video = cv2.VideoWriter(self.video_dir_path + 'bev_video_seq_'+ str(self.seq_id) + '.avi',self.fourcc,30.0,(600, 1400))
-		self.res_3d_video = cv2.VideoWriter(self.video_dir_path + 'res_3d_video_seq_'+ str(self.seq_id) + '.avi',self.fourcc,30.0,(1242, 375))
+		self.bev_video = cv2.VideoWriter(self.video_dir_path + 'bev_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(600, 1400))
+		self.res_3d_video = cv2.VideoWriter(self.video_dir_path + 'res_3d_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(1242, 375))
 
 
 		self.counter =0
@@ -157,7 +157,19 @@ class DataLoader(object):
 			break
 	
 	def get_all_annt(self):
+
+		# gt_seq_id_path = self.gt_path + str(self.seq_id)
 		
+		# try:
+  #       	os.makedirs(gt_seq_id_path)
+  #   	except OSError as exception:
+  #       	if exception.errno != errno.EEXIST:
+  #          		raise
+		idx_list = []
+		hf_idx = h5py.File(self.gt_path + self.seq_id + '_' + 'idx.h5', 'w')
+		hf_lidar = h5py.File(self.gt_path + self.seq_id + '_' + 'lidar.h5', 'w')
+		hf_bbox = h5py.File(self.gt_path + self.seq_id + '_' + 'bbox.h5', 'w')
+
 		self.get_all_tracklets()
 		for i in range(self.num_frames):
 			frm_data = self.tracklet_data[i]
@@ -182,24 +194,44 @@ class DataLoader(object):
 				bird_view = self.gen_bird_view(cor_pts)
 				global_bev = global_bev + bird_view
 				self.draw_3d_box(pts_in_image,img_bgr)
+
+				lidar_idx = 'lidar_' + self.seq_id + '_' + str(i) + '_' + str(j)
+				bbox_idx = 'bbox_' + self.seq_id + '_' + str(i) + '_' + str(j)
+
+				hf_lidar.create_dataset(lidar_idx, data=cor_pts)
+				hf_bbox.create_dataset(bbox_idx, data=bbox)
+				idx_list.append((lidar_idx, bbox_idx))
+
+				# self.filtered_lidar_pts.append(cor_pts)
+				
+
 				# self.draw_rectangle_cv(img_bgr,bbox)
 			# cv2.imwrite('bird_view_{}_tushar.png'.format(i),global_bev*255)
 			# cv2.imwrite('res_3d_vis_{}_tushar.png'.format(i),img_bgr)
-			self.filtered_lidar_pts.append(cor_pts)
 			self.bev_video.write(np.array(global_bev*255, dtype=np.uint8))
 			self.res_3d_video.write(img_bgr)
+
+		hf_idx.create_dataset('idx', data=idx_list)
+
+		hf_lidar.close()
+		hf_bbox.close()		
+		hf_idx.close()
+
+
+		
 		self.bev_video.release()
 		self.res_3d_video.release()
-		with open(self.gt_lidar_path + str(self.seq_id) + '.pkl', 'wb') as f:
-			pickle.dump(self.filtered_lidar_pts, f)
+		# with open(self.gt_path + str(self.seq_id) + '.pkl', 'wb') as f:
+			# pickle.dump(self.filtered_lidar_pts, f)
 
 
 if __name__ == '__main__':
 # 	data_root = '/home/ishan/Downloads/KITTI_DATA'
-	data_root = '../KITTI_data'
-	seq_id = 35
-	loader = DataLoader(data_root,seq_id)
-	loader.get_all_annt()
+	data_root = '../KITTI_data/2011_09_26/'
+	seq_ids = ['0001', '0035']
+	for seq_id in seq_ids:
+		loader = DataLoader(data_root,seq_id)
+		loader.get_all_annt()
 
 
 
