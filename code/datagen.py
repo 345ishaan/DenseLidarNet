@@ -103,8 +103,9 @@ class DataLoader(object):
 
 		l,w,h = dims
 		
-		tf_pts = (center.reshape(-1,3) - lidar_pts).dot(rot_mat)
-		
+		tf_pts = (center.reshape(-1,3) - lidar_pts[:,:3]).dot(rot_mat)
+		np.hstack((tf_pts, lidar_pts[:,3:]))
+
 		valid_pts = np.where(#(tf_pts[:,2] <= h) & (tf_pts[:,2] >= 0) &\
 							 (tf_pts[:,1] <= w/2) & (tf_pts[:,1] >= -w/2) &\
 							 (tf_pts[:,0] <= l/2) & (tf_pts[:,0] >= -l/2) )[0]
@@ -175,7 +176,7 @@ class DataLoader(object):
 			frm_data = self.tracklet_data[i]
 			img_bgr = self.get_image_data(i)
 			all_lidar_pts = self.get_lidar_pts(i)
-			all_lidar_pts = all_lidar_pts[:,:3]
+			# all_lidar_pts = all_lidar_pts[:,:3]
 
 			global_bev = self.gen_bird_view()
 
@@ -190,7 +191,6 @@ class DataLoader(object):
 				
 				cor_pts = self.get_tracklet_pts(all_lidar_pts,rot_mat,center,dim)
 				
-				
 				bird_view = self.gen_bird_view(cor_pts)
 				global_bev = global_bev + bird_view
 				self.draw_3d_box(pts_in_image,img_bgr)
@@ -204,7 +204,6 @@ class DataLoader(object):
 
 				# self.filtered_lidar_pts.append(cor_pts)
 				
-
 				# self.draw_rectangle_cv(img_bgr,bbox)
 			# cv2.imwrite('bird_view_{}_tushar.png'.format(i),global_bev*255)
 			# cv2.imwrite('res_3d_vis_{}_tushar.png'.format(i),img_bgr)
@@ -216,8 +215,6 @@ class DataLoader(object):
 		hf_lidar.close()
 		hf_bbox.close()		
 		hf_idx.close()
-
-
 		
 		self.bev_video.release()
 		self.res_3d_video.release()
