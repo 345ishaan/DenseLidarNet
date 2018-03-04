@@ -37,7 +37,7 @@ class DataLoader(object):
 
 		self.counter =0
 		self.num_frames = len(self.image_paths)
-		self.objects = ['Car','Van','Truck']
+		self.objects = ['Car']
 		self.load_projection_matrices()
 
 		self.filtered_lidar_pts = []
@@ -167,6 +167,7 @@ class DataLoader(object):
   #       	if exception.errno != errno.EEXIST:
   #          		raise
 		idx_list = []
+		dim_list = []
 		hf_idx = h5py.File(self.gt_path + self.seq_id + '_' + 'idx.h5', 'w')
 		hf_lidar = h5py.File(self.gt_path + self.seq_id + '_' + 'lidar.h5', 'w')
 		hf_bbox = h5py.File(self.gt_path + self.seq_id + '_' + 'bbox.h5', 'w')
@@ -185,6 +186,7 @@ class DataLoader(object):
 				center = frm_data[j][:,8]
 				yaw = np.unique(frm_data[j][:,10])[0]
 				dim = (frm_data[j][0,[-6,-5,-4]]).tolist()
+				dim_list.append(dim)
 				rot_mat = np.asarray([[np.cos(yaw), np.sin(yaw), 0.0],[-np.sin(yaw), np.cos(yaw), 0.0],[0.0,0.0, 1.0]])
 				pts_in_image = self.project_to_image(lidar_pts)
 				bbox = self.get_2d_bbox(pts_in_image)
@@ -218,6 +220,7 @@ class DataLoader(object):
 		
 		self.bev_video.release()
 		self.res_3d_video.release()
+		print(self.seq_id + '-->', np.array(dim_list).mean(axis=0))
 		# with open(self.gt_path + str(self.seq_id) + '.pkl', 'wb') as f:
 			# pickle.dump(self.filtered_lidar_pts, f)
 
