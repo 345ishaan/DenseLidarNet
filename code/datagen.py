@@ -7,7 +7,6 @@ from parseTrackletXML import *
 from ipdb import set_trace as brk
 import h5py
 
-
 class DataLoader(object):
 
 	def __init__(self,data_root,seq_id):
@@ -110,7 +109,7 @@ class DataLoader(object):
 							 (tf_pts[:,1] <= w/2) & (tf_pts[:,1] >= -w/2) &\
 							 (tf_pts[:,0] <= l/2) & (tf_pts[:,0] >= -l/2) )[0]
 
-		return lidar_pts[valid_pts,:]
+		return {'lidar_pts' : lidar_pts[valid_pts,:], 'tf_pts': tf_pts[valid_pts,:], 'center': center, 'dims': dims}
 
 	def get_2d_bbox(self,pts):
 		min_x = np.min(pts[0,:])
@@ -191,7 +190,8 @@ class DataLoader(object):
 				pts_in_image = self.project_to_image(lidar_pts)
 				bbox = self.get_2d_bbox(pts_in_image)
 				
-				cor_pts = self.get_tracklet_pts(all_lidar_pts,rot_mat,center,dim)
+				lidar_dict = self.get_tracklet_pts(all_lidar_pts,rot_mat,center,dim)
+				cor_pts = np.array(lidar_dict['lidar_pts'])
 				
 				bird_view = self.gen_bird_view(cor_pts)
 				global_bev = global_bev + bird_view
@@ -200,7 +200,12 @@ class DataLoader(object):
 				lidar_idx = 'lidar_' + self.seq_id + '_' + str(i) + '_' + str(j)
 				bbox_idx = 'bbox_' + self.seq_id + '_' + str(i) + '_' + str(j)
 
-				hf_lidar.create_dataset(lidar_idx, data=cor_pts)
+				# print lidar_dict['lidar_pts'].shape
+				grp_lidar = hf_lidar.create_group(lidar_idx)
+				grp_lidar.create_dataset('lidar_pts', data=lidar_dict['lidar_pts'])
+				grp_lidar.create_dataset('tf_pts', data=lidar_dict['tf_pts'])
+				grp_lidar.create_dataset('center', data=lidar_dict['center'])
+				grp_lidar.create_dataset('dims', data=lidar_dict['dims'])
 				hf_bbox.create_dataset(bbox_idx, data=bbox)
 				idx_list.append((lidar_idx, bbox_idx))
 
