@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-
-
 class VFELayer(nn.Module):
 
 	def __init__(self,c_in,c_out):
@@ -15,45 +13,66 @@ class VFELayer(nn.Module):
 		self.bn = nn.BatchNorm1d(c_out//2)
 		self.op = nn.ReLU(inplace=True)
 
-	def forward(self,x):
+	def forward(self,x,mask):
 		x = self.fc(x)
+		x = x.permute(0,2,1)
 		x = self.bn(x)
+		x = x.permute(0,2,1)
 		x = self.op(x)
-
-		global_feature,___ = torch.max(x,0)
-		global_feature = global_feature.expand(x.size()[0],self.out_dim//2)
-		x = torch.cat((x,global_feature),1)
-		return x
+		global_feature,___ = torch.max(x,1)
+		# print (global_feature.size())
+		global_feature = global_feature.unsqueeze(1).expand(x.size()[0],x.size()[1],self.out_dim//2)
+		x = torch.cat((x,global_feature),2)
+		mask = mask.unsqueeze(2).expand(x.size()[0],x.size()[1],self.out_dim).type(torch.FloatTensor)
+		
+		# print (x.size())
+		return x*mask
 
 class VFE(nn.Module):
 
-	def __init__(self,num_layers=2):
+	def __init__(self,batch_size,num_layers=2):
 		super(VFE, self).__init__()
 		layers=[]
+		self.batch_size = batch_size
 		'''
 		Static Initialization of Dims
 		'''
+
 		if num_layers > 2:
 			raise Exception('Not Supported')
-		
+
 		dims = [(7,32),(32,128)]
-		for i in range(num_layers):
-			layers.append(VFELayer(dims[i][0],dims[i][1]))
-		self.layers = nn.Sequential(*layers)
-		self.final_fc = nn.Sequential(
-						nn.Linear(dims[num_layers-1][1],128),
-						nn.BatchNorm1d(128),
-						nn.ReLU(inplace=True)
-						)
+		# for i in range(num_layers):
+		# 	layers.append(VFELayer(dims[i][0],dims[i][1]))
+			
+		#self.layers = nn.Sequential(*layers)
+		self.layer_1 = VFELayer(dims[0][0],dims[0][1])
+		self.layer_2 = VFELayer(dims[1][0],dims[1][1])
+		self.final_fc = nn.Linear(dims[num_layers-1][1],128)
+		self.final_bn = nn.BatchNorm1d(128)
+		self.final_op = nn.ReLU(inplace=True)
 
 
-	def forward(self,x):
-		x = self.layers(x)
+	def forward(self,x,mask):
+		x = self.layer_1(x,mask)
+		x = self.layer_2(x,mask)
 		x = self.final_fc(x)
-		voxel_feature,___ = torch.max(x,0)
+		x = x.permute(0,2,1)
+		x = self.final_bn(x)
+		x = x.permute(0,2,1)
+		x = self.final_op(x)
+
+		voxel_feature,___ = torch.max(x,1)
+		'''
+		Transform this tensor n X 128 to [batch_size *  h * w * 128]
+		Procedure
+		1) use indices from datagen and do scatter_ over torch.zeros(batch_size*h*w, 128)
+		2) Perform torch.view(batch_size,h,w,128)
+		'''
 		return voxel_feature
 
 
-net  = VFE(3)
-out = net.forward(Variable(torch.randn(11,7)))
+net  = VFE(2)
+mask = torch.randn(10,35) > 0.5
+out = net.forward(Variable(torch.randn(10,35,7)),Variable(mask))
 print (out.size())

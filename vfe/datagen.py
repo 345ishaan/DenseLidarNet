@@ -27,8 +27,9 @@ class DenseLidarGen(data.Dataset):
 		fnum_id = self.annts[idx][1]
 		bbox_data = self.annts[idx][2:6]
 		lidar_path = self.annts[idx][6]
+		tf_lidar_path = self.annts[idx][7]
 		img_path = os.path.join(self.data_root,str(seq_id),'image_02','data','%.10d'%(idx)+'.png')
-		return img_path,bbox_data,lidar_path
+		return img_path,bbox_data,lidar_path,tf_lidar_path
 
 	def __len__(self):
 		return self.num_samples
@@ -37,25 +38,33 @@ class DenseLidarGen(data.Dataset):
 		'''
 		Just collating the lidar data for version 0.0
 		'''	
-		batch_lidar_data=[]	
+		batch_voxel_data=[]	
+		batch_voxel_mask=[]	
+		batch_voxel_indices=[]
+
 		v_w=0.2
 		v_h=0.2
 		max_l=4
 		max_w=2
-		num_voxels =None
-		num_pts = None
-		for img_path,bbox_data,lidar_path in samples:
+		voxel_map_h = int(max_l/v_h)
+		voxel_map_w = int(max_w/v_w)
+		voxel_id_offset = 0
+		num_voxels =voxel_map_w*voxel_map_h
+		max_pts_in_voxel = 35
+		
+		
+		for img_path,bbox_data,lidar_path,tf_lidar_path in samples:
 			lidar_data = pkl.load(open(lidar_path,'rb'))
-			voxel_map = voxelize_lidar(lidar_data,v_w=v_w,v_h=v_h,max_l=max_l,max_w=max_w)
-			num_voxels = voxel_map.shape[0]
-			num_pts =  voxel_map.shape[1]
-			batch_lidar_data.append(self.transform(voxel_map))
-
-		inputs = torch.zeros(len(batch_lidar_data),num_voxels,num_pts,7)
-		for i in range(len(batch_lidar_data)):
-			inputs[i] = batch_lidar_data[i]
-
-		return inputs
+			tf_lidar_data = pkl.load(open(tf_lidar_path,'rb'))
+			voxel_features,voxel_indices,voxel_mask = voxelize_lidar(lidar_data,tf_lidar_data,voxel_id_offset,voxel_map_h,voxel_map_w,num_voxels,max_pts_in_voxel,v_w,v_h,max_w,max_l)
+			voxel_id_offset += num_voxels
+			
+			batch_voxel_data.append(voxel_features)
+			batch_voxel_mask.append(voxel_mask)
+			batch_voxel_indices.extend(voxel_indices)
+		
+		
+		return torch.cat(batch_voxel_data,0),torch.cat(batch_voxel_mask,0),torch.LongTensor((batch_voxel_indices))
 
 if __name__ == '__main__':
 	import torchvision
@@ -67,11 +76,11 @@ if __name__ == '__main__':
 		transforms.ToTensor()
 	])
 	dataset = DenseLidarGen('/home/ishan/DenseLidarNet/code/vfe/all_annt_train.pickle','/mnt/cvrr-nas/WorkArea3/WorkArea3_NoBackup/Userarea/ishan/KITTI_data/',transform)
-	dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)
+	dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)
 
 	
 	niters = 0
-	max_iters = 10
+	max_iters = 1
 	dump_path = './dbg'
 	
 	if not os.path.exists(dump_path):
@@ -81,5 +90,11 @@ if __name__ == '__main__':
 
 	while niters < max_iters:
 
-		for lidar_data in dataloader:
-			print (lidar_data.size())
+		for voxel_features,voxel_mask,voxel_indices in dataloader:
+			print (voxel_features.size())
+			print (voxel_mask.size())
+			print (voxel_indices.size())
+			niters += 1
+
+			if niters >max_iters:
+				break

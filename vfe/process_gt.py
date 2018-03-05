@@ -28,13 +28,21 @@ for idx in idx_list:
 	splits = idx[0].split('_')
 	fnum = int(splits[2])
 	bbox_id = splits[3]
+
 	bbox_data = np.array(hf_bbox.get(idx[1])).tolist()
-	lidar_data = np.array(hf_lidar.get(idx[0]))
+	lidar_data = np.array(hf_lidar.get(idx[0]+'/lidar_pts'))
+	tf_data = np.array(hf_lidar.get(idx[0]+'/tf_pts'))
+	center_data = np.array(hf_lidar.get(idx[0]+'/center'))
+	dims_data = np.array(hf_lidar.get(idx[0]+'/dims'))
+
 	x1,y1,x2,y2 = bbox_data
-	with open(os.path.join(data_path,idx[0]+'.pickle'),'wb') as f:
+	with open(os.path.join(data_path,idx[0]+'_lidar_pts.pickle'),'wb') as f:
 		pkl.dump(lidar_data,f,protocol=pkl.HIGHEST_PROTOCOL)
 	
-	pickle_data.append([seq_id,fnum,x1,y1,x2,y2,os.path.join(data_path,idx[0]+'.pickle')])
+	with open(os.path.join(data_path,idx[0]+'_tf_pts.pickle'),'wb') as f:
+		pkl.dump(tf_data,f,protocol=pkl.HIGHEST_PROTOCOL)
+
+	pickle_data.append([seq_id,fnum,x1,y1,x2,y2,os.path.join(data_path,idx[0]+'_lidar_pts.pickle'),os.path.join(data_path,idx[0]+'_tf_pts.pickle')])
 
 with open(os.path.join('all_annt_train.pickle'),'wb') as f:
 	pkl.dump(pickle_data,f,protocol=pkl.HIGHEST_PROTOCOL)
