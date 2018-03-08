@@ -102,7 +102,7 @@ class DataLoader(object):
 
 		l,w,h = dims
 		
-		tf_pts = (center.reshape(-1,3) - lidar_pts[:,:3]).dot(rot_mat)
+		tf_pts = (lidar_pts[:,:3] - center.reshape(-1,3)).dot(rot_mat)
 		np.hstack((tf_pts, lidar_pts[:,3:]))
 
 		valid_pts = np.where(#(tf_pts[:,2] <= h) & (tf_pts[:,2] >= 0) &\
