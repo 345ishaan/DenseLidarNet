@@ -56,14 +56,16 @@ class DenseLidarGen(data.Dataset):
 		for img_path,bbox_data,lidar_path,tf_lidar_path in samples:
 			lidar_data = pkl.load(open(lidar_path,'rb'))
 			tf_lidar_data = pkl.load(open(tf_lidar_path,'rb'))
+
 			voxel_features,voxel_indices,voxel_mask = voxelize_lidar(lidar_data,tf_lidar_data,voxel_id_offset,voxel_map_h,voxel_map_w,num_voxels,max_pts_in_voxel,v_w,v_h,max_w,max_l)
-			voxel_id_offset += num_voxels
-			
-			batch_voxel_data.append(voxel_features)
-			batch_voxel_mask.append(voxel_mask)
-			batch_voxel_indices.extend(voxel_indices)
+			if type(voxel_features) != list:
+				voxel_id_offset += num_voxels
+				batch_voxel_data.append(voxel_features)
+				batch_voxel_mask.append(voxel_mask)
+				batch_voxel_indices.extend(voxel_indices)
 		
-		
+		if len(batch_voxel_data) == 0:
+			return [],[],[]
 		return torch.cat(batch_voxel_data,0),torch.cat(batch_voxel_mask,0),torch.LongTensor((batch_voxel_indices))
 
 if __name__ == '__main__':
@@ -75,12 +77,12 @@ if __name__ == '__main__':
 	transform = transforms.Compose([
 		transforms.ToTensor()
 	])
-	dataset = DenseLidarGen('/home/ishan/DenseLidarNet/code/vfe/all_annt_train.pickle','/mnt/cvrr-nas/WorkArea3/WorkArea3_NoBackup/Userarea/ishan/KITTI_data/',transform)
+	dataset = DenseLidarGen('../data/all_annt_train.pickle','./imgs',transform)
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)
 
 	
 	niters = 0
-	max_iters = 1
+	max_iters = 1000000
 	dump_path = './dbg'
 	
 	if not os.path.exists(dump_path):
@@ -91,6 +93,9 @@ if __name__ == '__main__':
 	while niters < max_iters:
 
 		for voxel_features,voxel_mask,voxel_indices in dataloader:
+			if(type(voxel_features) == list):
+				continue
+
 			print (voxel_features.size())
 			print (voxel_mask.size())
 			print (voxel_indices.size())

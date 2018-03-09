@@ -5,9 +5,9 @@ import pandas as pd
 from ipdb import set_trace as brk
 import h5py
 
-bbox_path = '/home/ishan/DenseLidarNet/git/DenseLidarNet/ground_truth/0035_bbox.h5'
-idx_path = '/home/ishan/DenseLidarNet/git/DenseLidarNet/ground_truth/0035_idx.h5'
-lidar_path = '/home/ishan/DenseLidarNet/git/DenseLidarNet/ground_truth/0035_lidar.h5'
+bbox_path = '/home/ishan/Documents/DenseLidarNet/ground_truth/0035_bbox.h5'
+idx_path = '/home/ishan/Documents/DenseLidarNet/ground_truth/0035_idx.h5'
+lidar_path = '/home/ishan/Documents/DenseLidarNet/ground_truth/0035_lidar.h5'
 
 
 hf_bbox = h5py.File(bbox_path,'r')
@@ -17,7 +17,7 @@ hf_lidar = h5py.File(lidar_path,'r')
 
 
 idx_list = list(hf_idx.get('idx'))
-data_path = '/home/ishan/DenseLidarNet/data'
+data_path = '/home/ishan/DenseLidarNet_data'
 
 if not os.path.exists(data_path):
 	os.makedirs(data_path)

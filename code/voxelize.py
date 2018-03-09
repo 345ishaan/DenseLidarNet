@@ -44,6 +44,7 @@ def voxelize_lidar(lidar_data,tf_lidar_data,voxel_id_offset,voxel_map_h,voxel_ma
 				voxel_indices.append(voxel_id+voxel_id_offset)
 				voxel_mask.append(voxel_m)
 
-
+	if len(voxel_features) == 0:
+		return [],[],[]
 	return torch.stack(voxel_features),voxel_indices,torch.stack(voxel_mask)
 

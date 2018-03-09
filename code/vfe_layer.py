@@ -55,7 +55,7 @@ class VFE(nn.Module):
 		self.final_op = nn.ReLU(inplace=True)
 
 
-	def forward(self,x,mask,indices):
+	def forward(self,x,mask,indices,output):
 		x = self.layer_1(x,mask)
 		x = self.layer_2(x,mask)
 		x = self.final_fc(x)
@@ -65,18 +65,55 @@ class VFE(nn.Module):
 		x = self.final_op(x)
 
 		voxel_feature,___ = torch.max(x,1)
-		voxel_map = Variable(torch.zeros(self.batch_size*self.h*self.w,128)).scatter_(0,indices,voxel_feature).view(self.batch_size,self.h,self.w,128)		
 		'''
 		Transform this tensor n X 128 to [batch_size *  h * w * 128]
 		Procedure
 		1) use indices from datagen and do scatter_ over torch.zeros(batch_size*h*w, 128)
 		2) Perform torch.view(batch_size,h,w,128)
 		'''
+
+		voxel_map =output.scatter_(0,indices,voxel_feature).view(self.batch_size,self.h,self.w,128)
+
 		return voxel_map
+
+
+class DenseLidarNet(nn.Module):
+
+	def __init__(self,batch_size):
+		super(DenseLidarNet, self).__init__()
+		self.batch_size = batch_size
+
+		self.vfe_output = VFE(self.batch_size)
+		self.final_body = self._make_body(4)
+
+		self.xyz = self._make_head()
+
+	def _make_body(self,num_layers):
+		layers=[]
+		layers.append(nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1))
+		layers.append(nn.ReLU(True))
+		for _ in range(num_layers-1):
+			layers.append(nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1))
+		return nn.Sequential(*layers)
+
+	def _make_head(self):
+		layers=[]
+		layers.append(nn.Conv2d(256, 3, kernel_size=1, stride=1, padding=0))
+		return nn.Sequential(*layers)
+
+	def forward(self,x,mask,indices,output):
+
+		vfe_op = self.vfe_output(x,mask,indices,output)
+		vfe_op = vfe_op.transpose(1,3)
+		body_op = self.final_body(vfe_op)
+		final_op = self.xyz(body_op)
+		
+		return final_op
+
 
 
 # net  = VFE(2)
 # mask = torch.randn(10,35) > 0.5
-# out = net.forward(Variable(torch.randn(10,35,7)),Variable(mask))
 # print (mask.size())
+# out = net.forward(Variable(torch.randn(10,35,7)),Variable(mask))
 # print (out.size())
