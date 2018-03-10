@@ -7,7 +7,7 @@ def voxelize_lidar(lidar_data,tf_lidar_data,voxel_id_offset,voxel_map_h,voxel_ma
 	
 	
 	valid_tf_lidar_data =tf_lidar_data[np.where(tf_lidar_data[:,2]<=0.4)[0],:]
-	valid_lidar_data =lidar_data[np.where(tf_lidar_data[:,2]<=0.4)[0],:]
+	# valid_lidar_data =lidar_data[np.where(tf_lidar_data[:,2]<=0.4)[0],:]
 
 	voxel_indices = []
 	voxel_features= []
@@ -21,7 +21,8 @@ def voxelize_lidar(lidar_data,tf_lidar_data,voxel_id_offset,voxel_map_h,voxel_ma
 			y_start = y_end- v_w
 			valid_pts_idx = np.where((valid_tf_lidar_data[:,0]>x_start) & (valid_tf_lidar_data[:,0]<=x_end)\
 									& (valid_tf_lidar_data[:,1]>y_start)& (valid_tf_lidar_data[:,1]<=y_end))[0]
-			valid_pts = valid_lidar_data[valid_pts_idx,:]
+			valid_pts = valid_tf_lidar_data[valid_pts_idx,:]
+			# valid_pts = valid_lidar_data[valid_pts_idx,:]
 			if len(valid_pts) > max_pts_voxel:
 				valid_pts = valid_pts[np.random.choice(len(valid_pts),max_pts_voxel,replace=False),:]
 
