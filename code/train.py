@@ -27,6 +27,7 @@ class Main(object):
 	def __init__(self):
 
 		self.batch_size = 2
+		self.max_pts_in_voxel = 20
 		self.logger = Logger('./logs')
 		self.transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
 		self.dataset = DenseLidarGen('../data/all_annt_train.pickle','/home/ishan/images',self.transform)
@@ -35,31 +36,39 @@ class Main(object):
 		# self.load_model()
 		self.h = 20
 		self.w = 10
-		self.net = DenseLidarNet(self.batch_size)
+		self.load_model()
+		self.criterion = ChamferLoss()
+		self.optimizer = optim.SGD(self.net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
+
 
 
 	def load_model(self):
 		self.net  = DenseLidarNet()
 		self.net.load_state_dict(torch.load('./scripts/net.pth'))
-		assert torch.cuda.is_available(), 'Error: CUDA not found!'
+		# assert torch.cuda.is_available(), 'Error: CUDA not found!'
 		
-		self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
-		self.net.cuda()
-
-
-
+		# self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
+		# self.net.cuda()
 
 
 	def train(self):
 
+		train_loss = 0
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices) in enumerate(self.dataloader):
 			voxel_features = Variable(voxel_features)
 			voxel_mask = Variable(voxel_mask.squeeze())
 			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
-
 			vfe_output = Variable(torch.zeros(self.batch_size*self.h*self.w,128))
+
+			self.optimizer.zero_grad()
+			
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
-			brk()
+			loss = criterion()
+			train_loss += loss.data[0]
+			print('train_loss: %.3f' % (loss.data[0])
+			
+
+
 
 			
 

@@ -1,6 +1,9 @@
+import math
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import torch.nn.init as init
+from ipdb import set_trace as brk
 
 class VFELayer(nn.Module):
 
@@ -12,6 +15,16 @@ class VFELayer(nn.Module):
 		self.fc = nn.Linear(c_in,c_out//2)
 		self.bn = nn.BatchNorm1d(c_out//2)
 		self.op = nn.ReLU(inplace=True)
+		
+		for m in self.modules():
+			if isinstance(m,nn.Conv2d):
+				n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+				m.weight.data.normal_(0, math.sqrt(2. / n))
+			elif isinstance(m, nn.BatchNorm2d):
+				m.weight.data.fill_(1)
+				m.bias.data.zero_()
+
+
 
 	def forward(self,x,mask):
 		x = self.fc(x)
@@ -30,10 +43,9 @@ class VFELayer(nn.Module):
 
 class VFE(nn.Module):
 
-	def __init__(self,batch_size,num_layers=2):
+	def __init__(self,num_layers=2):
 		super(VFE, self).__init__()
 		layers=[]
-		self.batch_size = batch_size
 		self.h = 20
 		self.w = 10
 		'''
@@ -53,6 +65,14 @@ class VFE(nn.Module):
 		self.final_fc = nn.Linear(dims[num_layers-1][1],128)
 		self.final_bn = nn.BatchNorm1d(128)
 		self.final_op = nn.ReLU(inplace=True)
+		for m in self.modules():
+			if isinstance(m,nn.Conv2d):
+				n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+				m.weight.data.normal_(0, math.sqrt(2. / n))
+			elif isinstance(m, nn.BatchNorm2d):
+				m.weight.data.fill_(1)
+				m.bias.data.zero_()
+
 
 
 	def forward(self,x,mask,indices,output):
@@ -72,21 +92,32 @@ class VFE(nn.Module):
 		2) Perform torch.view(batch_size,h,w,128)
 		'''
 
-		voxel_map =output.scatter_(0,indices,voxel_feature).view(self.batch_size,self.h,self.w,128)
+		voxel_map =output.scatter_(0,indices,voxel_feature).view(-1,self.h,self.w,128)
 
 		return voxel_map
 
 
 class DenseLidarNet(nn.Module):
 
-	def __init__(self,batch_size):
+	def __init__(self,max_pts_in_voxel=10):
 		super(DenseLidarNet, self).__init__()
-		self.batch_size = batch_size
+		self.max_pts_in_voxel= max_pts_in_voxel
 
-		self.vfe_output = VFE(self.batch_size)
+		self.vfe_output = VFE()
 		self.final_body = self._make_body(4)
 
-		self.xyz = self._make_head()
+		self.x_op = self._make_head()
+		self.y_op = self._make_head()
+		self.z_op = self._make_head()
+
+		for m in self.modules():
+			if isinstance(m,nn.Conv2d):
+				n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+				m.weight.data.normal_(0, math.sqrt(2. / n))
+			elif isinstance(m, nn.BatchNorm2d):
+				m.weight.data.fill_(1)
+				m.bias.data.zero_()
+
 
 	def _make_body(self,num_layers):
 		layers=[]
@@ -98,7 +129,8 @@ class DenseLidarNet(nn.Module):
 
 	def _make_head(self):
 		layers=[]
-		layers.append(nn.Conv2d(256, 3, kernel_size=1, stride=1, padding=0))
+		layers.append(nn.Conv2d(256, self.max_pts_in_voxel, kernel_size=1, stride=1, padding=0))
+
 		return nn.Sequential(*layers)
 
 	def forward(self,x,mask,indices,output):
@@ -106,12 +138,13 @@ class DenseLidarNet(nn.Module):
 		vfe_op = self.vfe_output(x,mask,indices,output)
 		vfe_op = vfe_op.transpose(1,3)
 		body_op = self.final_body(vfe_op)
-		final_op = self.xyz(body_op)
-		
-		return final_op
+		x_op = self.x_op(body_op)
+		y_op = self.y_op(body_op)
+		z_op = self.z_op(body_op)
+		return torch.cat((x_op.view(-1,20*10*self.max_pts_in_voxel, 1),y_op.view(-1,20*10*self.max_pts_in_voxel,1),z_op.view(-1,20*10*self.max_pts_in_voxel,1)),2)
 
 
-
+# net = VFELayer(2,2)
 # net  = VFE(2)
 # mask = torch.randn(10,35) > 0.5
 # print (mask.size())
