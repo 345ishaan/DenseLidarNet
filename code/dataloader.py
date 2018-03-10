@@ -41,6 +41,8 @@ class DenseLidarGen(data.Dataset):
 		batch_voxel_data=[]	
 		batch_voxel_mask=[]	
 		batch_voxel_indices=[]
+		batch_chamfer_gt = []
+
 
 		v_w=0.2
 		v_h=0.2
@@ -63,10 +65,16 @@ class DenseLidarGen(data.Dataset):
 				batch_voxel_data.append(voxel_features)
 				batch_voxel_mask.append(voxel_mask)
 				batch_voxel_indices.extend(voxel_indices)
+
+				the_pts = tf_lidar_data[np.random.choice(tf_lidar_data.shape[0],1000,replace=True),:3] # change to F
+				batch_chamfer_gt.append(torch.FloatTensor(the_pts).unsqueeze(0))
+
 		
 		if len(batch_voxel_data) == 0:
-			return [],[],[]
-		return torch.cat(batch_voxel_data,0),torch.cat(batch_voxel_mask,0),torch.LongTensor((batch_voxel_indices))
+			return [],[],[],[]
+		
+		return torch.cat(batch_voxel_data,0),torch.cat(batch_voxel_mask,0),\
+				torch.LongTensor((batch_voxel_indices)),torch.cat(batch_chamfer_gt,0)
 
 if __name__ == '__main__':
 	import torchvision
@@ -77,7 +85,7 @@ if __name__ == '__main__':
 	transform = transforms.Compose([
 		transforms.ToTensor()
 	])
-	dataset = DenseLidarGen('../data/all_annt_train.pickle','./imgs',transform)
+	dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','./imgs',transform)
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)
 
 	
@@ -92,13 +100,14 @@ if __name__ == '__main__':
 
 	while niters < max_iters:
 
-		for voxel_features,voxel_mask,voxel_indices in dataloader:
+		for voxel_features,voxel_mask,voxel_indices,gt in dataloader:
 			if(type(voxel_features) == list):
 				continue
 
 			print (voxel_features.size())
 			print (voxel_mask.size())
 			print (voxel_indices.size())
+			print (gt.size())
 			niters += 1
 
 			if niters >max_iters:
