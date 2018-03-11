@@ -26,12 +26,12 @@ class DataLoader(object):
 		self.bev_y_range=[-30.0,30.0]
 
 		dir = os.path.dirname(__file__)
-		self.video_dir_path = os.path.join(dir, '../videos/')
-		self.gt_path = os.path.join(dir, '../ground_truth/')
+		self.video_dir_path = os.path.join(dir, '../../../videos/')
+		self.gt_path = os.path.join(dir, '../../../ground_truth/')
 
-		self.fourcc = cv2.VideoWriter_fourcc(*'XVID')
-		self.bev_video = cv2.VideoWriter(self.video_dir_path + 'bev_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(600, 1400))
-		self.res_3d_video = cv2.VideoWriter(self.video_dir_path + 'res_3d_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(1242, 375))
+		#self.fourcc = cv2.VideoWriter_fourcc(*'XVID')
+		#self.bev_video = cv2.VideoWriter(self.video_dir_path + 'bev_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(600, 1400))
+		#self.res_3d_video = cv2.VideoWriter(self.video_dir_path + 'res_3d_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(1242, 375))
 
 
 		self.counter =0
@@ -214,8 +214,8 @@ class DataLoader(object):
 				# self.draw_rectangle_cv(img_bgr,bbox)
 			# cv2.imwrite('bird_view_{}_tushar.png'.format(i),global_bev*255)
 			# cv2.imwrite('res_3d_vis_{}_tushar.png'.format(i),img_bgr)
-			self.bev_video.write(np.array(global_bev*255, dtype=np.uint8))
-			self.res_3d_video.write(img_bgr)
+			#self.bev_video.write(np.array(global_bev*255, dtype=np.uint8))
+			#self.res_3d_video.write(img_bgr)
 
 		hf_idx.create_dataset('idx', data=idx_list)
 
@@ -223,17 +223,17 @@ class DataLoader(object):
 		hf_bbox.close()		
 		hf_idx.close()
 		
-		self.bev_video.release()
-		self.res_3d_video.release()
-		print(self.seq_id + '-->', np.array(dim_list).mean(axis=0))
+		#self.bev_video.release()
+		#self.res_3d_video.release()
+		#print(self.seq_id + '-->', np.array(dim_list).mean(axis=0))
 		# with open(self.gt_path + str(self.seq_id) + '.pkl', 'wb') as f:
 			# pickle.dump(self.filtered_lidar_pts, f)
 
 
 if __name__ == '__main__':
 # 	data_root = '/home/ishan/Downloads/KITTI_DATA'
-	data_root = '../KITTI_data/2011_09_26/'
-	seq_ids = ['0001', '0035']
+	data_root = '../../../KITTI_data/2011_09_26/'
+	seq_ids = ['0001', '0002', '0005',  '0011', '0013', '0014', '0015', '0017', '0018', '0019', '0020', '0022', '0023', '0027', '0028', '0029', '0032', '0035', '0036', '0039', '0046', '0048', '0051', '0052', '0056', '0057', '0059', '0060', '0061', '0064', '0070', '0079', '0084', '0086', '0087', '0091', '0093']
 	for seq_id in seq_ids:
 		loader = DataLoader(data_root,seq_id)
 		loader.get_all_annt()
