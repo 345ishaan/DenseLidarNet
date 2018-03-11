@@ -30,7 +30,7 @@ class Main(object):
 		self.max_pts_in_voxel = 20
 		self.logger = Logger('./logs')
 		self.transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
-		self.dataset = DenseLidarGen('../data/all_annt_train.pickle','/home/ishan/images',self.transform)
+		self.dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
 		self.dataloader = torch.utils.data.DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.dataset.collate_fn)
 		
 		# self.load_model()
@@ -54,7 +54,7 @@ class Main(object):
 	def train(self):
 
 		train_loss = 0
-		for batch_idx,(voxel_features,voxel_mask,voxel_indices) in enumerate(self.dataloader):
+		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.dataloader):
 			voxel_features = Variable(voxel_features)
 			voxel_mask = Variable(voxel_mask.squeeze())
 			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
@@ -63,7 +63,7 @@ class Main(object):
 			self.optimizer.zero_grad()
 			
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
-			loss = criterion()
+			loss = criterion(xyz_output, chamfer_gt)
 			train_loss += loss.data[0]
 			print('train_loss: %.3f' % (loss.data[0])
 			
