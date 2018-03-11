@@ -63,24 +63,26 @@ class Main(object):
 			self.optimizer.zero_grad()
 			
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
-			loss = criterion(xyz_output, chamfer_gt)
+			print(xyz_output)
+			loss = self.criterion(xyz_output, Variable(chamfer_gt))
 			train_loss += loss.data[0]
-			print('train_loss: %.3f' % (loss.data[0])
-
+			print('train_loss: %.3f' % (loss.data[0]))
+			self.optimizer.zero_grad()
 			loss.backward()
-        	self.optimizer.step()
-			
+			self.optimizer.step()
+
 			torch.save(self.net.state_dict(), '../../model_state.pth')
 			torch.save(self.optimizer.state_dict(), '../../opt_state.pth')
 
-			
+			for param in self.net.parameters():
+				print(param.data)			
 		
 
 
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Dense LiDarNet Training')
-	parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
+	parser.add_argument('--lr', default=1e-4, type=float, help='learning rate')
 	parser.add_argument('--resume', '-r', default=False, type=bool, help='resume from checkpoint')
 	args = parser.parse_args()
 

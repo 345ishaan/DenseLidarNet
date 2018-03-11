@@ -182,8 +182,6 @@ class DataLoader(object):
 
 			for j in range(len(frm_data)):
 				lidar_pts = frm_data[j][:,:8]
-				if lidar_pts.shape[0] < 1000: # Min number of lidar points required
-					continue
 				center = frm_data[j][:,8]
 				yaw = np.unique(frm_data[j][:,10])[0]
 				dim = (frm_data[j][0,[-6,-5,-4]]).tolist()
@@ -194,7 +192,9 @@ class DataLoader(object):
 				
 				lidar_dict = self.get_tracklet_pts(all_lidar_pts,rot_mat,center,dim)
 				cor_pts = np.array(lidar_dict['lidar_pts'])
-				
+				if cor_pts.shape[0] < 1000:
+					continue				
+
 				bird_view = self.gen_bird_view(cor_pts)
 				global_bev = global_bev + bird_view
 				self.draw_3d_box(pts_in_image,img_bgr)
