@@ -66,15 +66,15 @@ class Main(object):
 			loss = criterion(xyz_output, chamfer_gt)
 			train_loss += loss.data[0]
 			print('train_loss: %.3f' % (loss.data[0])
+
+			loss.backward()
+        	self.optimizer.step()
 			
-
-
-
-			
-
+			torch.save(self.net.state_dict(), '../../model_state.pth')
+			torch.save(self.optimizer.state_dict(), '../../opt_state.pth')
 
 			
-			
+		
 
 
 

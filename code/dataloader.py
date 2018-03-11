@@ -66,7 +66,7 @@ class DenseLidarGen(data.Dataset):
 				batch_voxel_mask.append(voxel_mask)
 				batch_voxel_indices.extend(voxel_indices)
 
-				the_pts = tf_lidar_data[np.random.choice(tf_lidar_data.shape[0],1000,replace=True),:3] # change to F
+				the_pts = tf_lidar_data[np.random.choice(tf_lidar_data.shape[0],1000,replace=False),:3] # change to F
 				batch_chamfer_gt.append(torch.FloatTensor(the_pts).unsqueeze(0))
 
 		

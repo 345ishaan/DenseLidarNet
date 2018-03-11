@@ -182,6 +182,8 @@ class DataLoader(object):
 
 			for j in range(len(frm_data)):
 				lidar_pts = frm_data[j][:,:8]
+				if lidar_pts.shape[0] < 1000: # Min number of lidar points required
+					continue
 				center = frm_data[j][:,8]
 				yaw = np.unique(frm_data[j][:,10])[0]
 				dim = (frm_data[j][0,[-6,-5,-4]]).tolist()
