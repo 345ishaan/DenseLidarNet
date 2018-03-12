@@ -2,7 +2,7 @@ from __future__ import print_function
 
 import os
 import argparse
-from ipdb import set_trace as brk
+from pdb import set_trace as brk
 from logger import Logger
 
 import torch

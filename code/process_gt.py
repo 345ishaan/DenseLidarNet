@@ -1,16 +1,20 @@
-import cPickle as pkl
+import sys
+if sys.version_info >= (3,0):
+	import _pickle as pkl
+else:
+	import cPickle as pkl
 import numpy as np
 import os
 import pandas as pd
-from ipdb import set_trace as brk
+from pdb import set_trace as brk
 import h5py
 
 
 def process_gt_data(seq_id, data_path):
 
-	bbox_path = '../../ground_truth/' + seq_id + '_bbox.h5'
-	idx_path = '../../ground_truth/' + seq_id + '_idx.h5'
-	lidar_path = '../../ground_truth/' + seq_id + '_lidar.h5'
+	bbox_path = '../ground_truth/' + seq_id + '_bbox.h5'
+	idx_path = '../ground_truth/' + seq_id + '_idx.h5'
+	lidar_path = '../ground_truth/' + seq_id + '_lidar.h5'
 	
 	print (lidar_path)
 	hf_bbox = h5py.File(bbox_path,'r')
@@ -25,7 +29,7 @@ def process_gt_data(seq_id, data_path):
 
 	pickle_data = []
 	for idx in idx_list:
-		splits = idx[0].split('_')
+		splits = idx[0].decode().split('_')
 		fnum = int(splits[2])
 		bbox_id = splits[3]
 

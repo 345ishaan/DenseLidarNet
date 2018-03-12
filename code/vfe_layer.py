@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.init as init
-from ipdb import set_trace as brk
+from pdb import set_trace as brk
 
 class VFELayer(nn.Module):
 
