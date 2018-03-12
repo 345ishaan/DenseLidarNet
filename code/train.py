@@ -29,7 +29,8 @@ class Main(object):
 		self.batch_size = 2
 		self.max_pts_in_voxel = 20
 		self.logger = Logger('./logs')
-		self.transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
+		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
+		self.transform = transforms.Compose([transforms.ToTensor()])
 		self.dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
 		self.dataloader = torch.utils.data.DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.dataset.collate_fn)
 		
