@@ -42,6 +42,7 @@ class Main(object):
 		# self.load_model()
 		self.h = 20
 		self.w = 10
+		self.use_cuda = torch.cuda.is_available()        
 		self.load_model()
 		self.criterion = ChamferLoss()
 		self.optimizer = optim.SGD(self.net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
@@ -63,7 +64,8 @@ class Main(object):
 		# assert torch.cuda.is_available(), 'Error: CUDA not found!'
 		
 		# self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
-		# self.net.cuda()
+		if self.use_cuda:
+			self.net.cuda()
         
 	def adjust_learning_rate(self, optimizer, epoch, base_lr):
 		"""Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
@@ -75,13 +77,19 @@ class Main(object):
 		train_loss = []
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.dataloader):
 			voxel_features = Variable(voxel_features)
-			voxel_mask = Variable(voxel_mask.squeeze())
+			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
 			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
 			vfe_output = Variable(torch.zeros(self.batch_size*self.h*self.w,128))
-
+            
+			if self.use_cuda:
+				voxel_features = voxel_features.cuda()
+				voxel_mask = voxel_mask.cuda()
+				voxel_indices = voxel_indices.cuda()
+				vfe_output = vfe_output.cuda()
+			#brk()
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
 			#print(xyz_output)
-			loss = self.criterion(xyz_output, Variable(chamfer_gt))
+			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
 			train_loss += [loss.data[0]]
 			print('train_loss EPOCH [%d] ITER [%d]  %.3f' % (epoch ,batch_idx,loss.data[0]))
 			self.optimizer.zero_grad()

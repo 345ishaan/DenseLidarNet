@@ -20,15 +20,17 @@ class VFELayer(nn.Module):
 			if isinstance(m,nn.Conv2d):
 				n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
 				m.weight.data.normal_(0, math.sqrt(2. / n))
-			elif isinstance(m, nn.BatchNorm2d):
+			elif isinstance(m, nn.BatchNorm1d):
 				m.weight.data.fill_(1)
 				m.bias.data.zero_()
 
 
 
 	def forward(self,x,mask):
+		#brk()
 		x = self.fc(x)
 		x = x.permute(0,2,1)
+		x = x.contiguous()
 		x = self.bn(x)
 		x = x.permute(0,2,1)
 		x = self.op(x)
@@ -36,9 +38,10 @@ class VFELayer(nn.Module):
 		# print (global_feature.size())
 		global_feature = global_feature.unsqueeze(1).expand(x.size()[0],x.size()[1],self.out_dim//2)
 		x = torch.cat((x,global_feature),2)
-		mask = mask.unsqueeze(2).expand(x.size()[0],x.size()[1],self.out_dim).type(torch.FloatTensor)
+		mask = mask.unsqueeze(2).expand(x.size()[0],x.size()[1],self.out_dim).type(torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
 		
 		# print (x.size())
+		#brk()
 		return x*mask
 
 class VFE(nn.Module):
@@ -69,7 +72,7 @@ class VFE(nn.Module):
 			if isinstance(m,nn.Conv2d):
 				n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
 				m.weight.data.normal_(0, math.sqrt(2. / n))
-			elif isinstance(m, nn.BatchNorm2d):
+			elif isinstance(m, nn.BatchNorm1d):
 				m.weight.data.fill_(1)
 				m.bias.data.zero_()
 
@@ -80,6 +83,7 @@ class VFE(nn.Module):
 		x = self.layer_2(x,mask)
 		x = self.final_fc(x)
 		x = x.permute(0,2,1)
+		x = x.contiguous()
 		x = self.final_bn(x)
 		x = x.permute(0,2,1)
 		x = self.final_op(x)
@@ -91,7 +95,7 @@ class VFE(nn.Module):
 		1) use indices from datagen and do scatter_ over torch.zeros(batch_size*h*w, 128)
 		2) Perform torch.view(batch_size,h,w,128)
 		'''
-
+		#brk()
 		voxel_map =output.scatter_(0,indices,voxel_feature).view(-1,self.h,self.w,128)
 
 		return voxel_map
@@ -134,7 +138,7 @@ class DenseLidarNet(nn.Module):
 		return nn.Sequential(*layers)
 
 	def forward(self,x,mask,indices,output):
-
+		#brk()
 		vfe_op = self.vfe_output(x,mask,indices,output)
 		vfe_op = vfe_op.transpose(1,3)
 		body_op = self.final_body(vfe_op)
