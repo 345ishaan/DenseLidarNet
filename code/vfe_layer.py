@@ -35,11 +35,11 @@ class VFELayer(nn.Module):
 		x = x.permute(0,2,1)
 		x = self.op(x)
 		global_feature,___ = torch.max(x,1)
+		#brk()
 		# print (global_feature.size())
 		global_feature = global_feature.unsqueeze(1).expand(x.size()[0],x.size()[1],self.out_dim//2)
 		x = torch.cat((x,global_feature),2)
 		mask = mask.unsqueeze(2).expand(x.size()[0],x.size()[1],self.out_dim).type(torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor)
-		
 		# print (x.size())
 		#brk()
 		return x*mask
@@ -142,6 +142,7 @@ class DenseLidarNet(nn.Module):
 		vfe_op = self.vfe_output(x,mask,indices,output)
 		vfe_op = vfe_op.transpose(1,3)
 		body_op = self.final_body(vfe_op)
+		#brk()
 		x_op = self.x_op(body_op)
 		y_op = self.y_op(body_op)
 		z_op = self.z_op(body_op)

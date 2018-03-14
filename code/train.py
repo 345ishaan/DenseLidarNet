@@ -10,6 +10,8 @@ import numpy as np
 
 import time
 from logger import Logger
+import shutil
+import sys
 
 import torch
 import torch.nn as nn
@@ -26,18 +28,24 @@ from dataloader import DenseLidarGen
 from chamfer_loss import *
 from vfe_layer import *
 
-
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+	torch.save(state, filename)
+	if is_best:
+		shutil.copyfile(filename, 'model_best.pth.tar')
 
 class Main(object):
 
-	def __init__(self):
+	def __init__(self, args):
 
 		self.batch_size = 2
+		self.args = args
 		self.max_pts_in_voxel = 20
 		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
 		self.transform = transforms.Compose([transforms.ToTensor()])
-		self.dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
-		self.dataloader = torch.utils.data.DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.dataset.collate_fn)
+		self.train_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
+		self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.train_dataset.collate_fn)
+		self.val_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
+		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.val_dataset.collate_fn)
 		
 		# self.load_model()
 		self.h = 20
@@ -75,7 +83,9 @@ class Main(object):
             
 	def train(self, epoch):
 		train_loss = []
-		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.dataloader):
+		self.net.train()
+		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.train_dataloader):
+			#brk()
 			voxel_features = Variable(voxel_features)
 			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
 			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
@@ -86,32 +96,66 @@ class Main(object):
 				voxel_mask = voxel_mask.cuda()
 				voxel_indices = voxel_indices.cuda()
 				vfe_output = vfe_output.cuda()
-			#brk()
+
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
-			#print(xyz_output)
+
 			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
 			train_loss += [loss.data[0]]
-			print('train_loss EPOCH [%d] ITER [%d]  %.3f' % (epoch ,batch_idx,loss.data[0]))
+			if batch_idx % self.args.print_freq == 0:
+				progress_stats = '(train) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
+					'Loss {loss:.4f}\t'.format(
+					time.ctime()[:-8], epoch, batch_idx, len(self.train_dataloader), loss=loss.data[0])
+				print(progress_stats)
 			self.optimizer.zero_grad()
-
+			#brk()
 			loss.backward()
+			#brk()
 			self.optimizer.step()
 
-			torch.save(self.net.state_dict(), '../../model_state.pth')
-			torch.save(self.optimizer.state_dict(), '../../opt_state.pth')
+			#torch.save(self.net.state_dict(), '../../model_state.pth')
+			#torch.save(self.optimizer.state_dict(), '../../opt_state.pth')
             
 			#for param in self.net.parameters():
 			#	print(param.data)			
 		return train_loss
 
+	def validate(self):
+		val_loss = []
+		self.net.eval()
+		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.val_dataloader):
+			voxel_features = Variable(voxel_features)
+			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
+			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
+			vfe_output = Variable(torch.zeros(self.batch_size*self.h*self.w,128))
+            
+			if self.use_cuda:
+				voxel_features = voxel_features.cuda()
+				voxel_mask = voxel_mask.cuda()
+				voxel_indices = voxel_indices.cuda()
+				vfe_output = vfe_output.cuda()
+
+			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
+
+			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
+			val_loss += [loss.data[0]]
+			if batch_idx % self.args.print_freq == 0:
+				progress_stats = '(val) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
+					'Loss {loss:.4f}\t'.format(
+					time.ctime()[:-8], epoch, batch_idx, len(self.val_dataloader), loss=loss.data[0])
+				print(progress_stats)
+		return val_loss
+
+        
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Dense LiDarNet Training')
-	parser.add_argument('--lr', default=1e-6, type=float, help='learning rate')
+	parser.add_argument('--lr', default=1e-7, type=float, help='learning rate')
 	parser.add_argument('--resume', '-r', default=False, type=bool, help='resume from checkpoint')
 	parser.add_argument('--epochs', default=10000, type=int, metavar='N', help='number of total epochs to run')
 	parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 	parser.add_argument('--print-freq', '-p', default=10, type=int, metavar='N', help='print frequency (default: 10)')
+	parser.add_argument('--resume2', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
+	parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 	args = parser.parse_args()
     
 	print ("****************************************************************************************")
@@ -121,12 +165,34 @@ if __name__ == '__main__':
 	print ("Number of GPU units available :", torch.cuda.device_count())
 	print ("****************************************************************************************")
 
-	net = Main()
+	net = Main(args)
 	train_loss = []
+	val_loss = []
+	best_loss = np.inf
+	if args.resume:
+		if os.path.isfile(args.resume):
+			print("=> loading checkpoint '{}'".format(args.resume))
+			checkpoint = torch.load(args.resume)
+			args.start_epoch = checkpoint['epoch']
+			best_loss = checkpoint['best_loss']
+			net.net.load_state_dict(checkpoint['state_dict'])
+			net.optimizer.load_state_dict(checkpoint['optimizer'])
+			train_loss += checkpoint['train_loss']
+			val_loss += checkpoint['val_loss']
+			print("=> loaded checkpoint '{}' (epoch {})"
+				.format(args.resume, checkpoint['epoch']))
+		else:
+			print("=> no checkpoint found at '{}'".format(args.resume))
+
+	if args.evaluate:
+		val_stats = net.validate()
+		print("VALIDATE : avg loss = ", np.mean(val_stats))
+		sys.exit(0)
+
 	for epoch in range(args.start_epoch, args.epochs + args.start_epoch):
 		net.adjust_learning_rate(net.optimizer, epoch, args.lr)
         
-        # uncomment following two series of code block to verify if backpropgation is happening properly
+		# uncomment following two series of code block to verify if backpropgation is happening properly
 		# old_params = []
 		# for i in range(len(list(net.net.parameters()))):
 		# 	old_params.append(list(net.net.parameters())[i])
@@ -137,6 +203,23 @@ if __name__ == '__main__':
 		# for i in range(len(list(net.net.parameters()))):
 		# 	print("weight update for parameter : ", i, not torch.equal(old_params[i].data, list(net.net.parameters())[i].data))
 
+		val_stats = 0
+		#val_stats = net.validate()
+		#val_loss += [val_stats]
+		#print("VALIDATE avg loss = ", np.mean(val_stats))
+        
+		# remember best val loss and save checkpoint
+		is_best = val_stats < best_loss
+		best_loss = max(val_stats, best_loss)
+		save_checkpoint({
+			'train_loss':train_loss,
+			'val_loss':val_loss,
+			'epoch': epoch + 1,
+			'state_dict': net.net.state_dict(),
+			'best_loss': best_loss,
+			'optimizer' : net.optimizer.state_dict(),
+		}, is_best)
+        
 		plt.figure(figsize=(12,12))
 		net.plot_stats(epoch+1, train_loss, None, 'train_loss', 'val_loss', plt)
 		plt.savefig('progress/' + net.run_time + '/stats.jpg')
