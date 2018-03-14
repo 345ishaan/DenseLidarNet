@@ -37,7 +37,7 @@ class Main(object):
 
 	def __init__(self, args):
 
-		self.batch_size = 2
+		self.batch_size = 32
 		self.args = args
 		self.max_pts_in_voxel = 20
 		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
@@ -77,7 +77,7 @@ class Main(object):
         
 	def adjust_learning_rate(self, optimizer, epoch, base_lr):
 		"""Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-		lr = base_lr * (0.1 ** (epoch // 1000))
+		lr = base_lr * (0.1 ** (epoch // 400))
 		for param_group in optimizer.param_groups:
 			param_group['lr'] = lr
             
@@ -89,7 +89,7 @@ class Main(object):
 			voxel_features = Variable(voxel_features)
 			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
 			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
-			vfe_output = Variable(torch.zeros(self.batch_size*self.h*self.w,128))
+			vfe_output = Variable(torch.zeros(chamfer_gt.size(0)*self.h*self.w,128))
             
 			if self.use_cuda:
 				voxel_features = voxel_features.cuda()
@@ -103,8 +103,8 @@ class Main(object):
 			train_loss += [loss.data[0]]
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(train) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
-					'Loss {loss:.4f}\t'.format(
-					time.ctime()[:-8], epoch, batch_idx, len(self.train_dataloader), loss=loss.data[0])
+					'Loss {net_loss:.4f}\t'.format(
+					time.ctime()[:-8], epoch, batch_idx, len(self.train_dataloader), net_loss=loss.data[0])
 				print(progress_stats)
 			self.optimizer.zero_grad()
 			#brk()
