@@ -37,7 +37,7 @@ class Main(object):
 
 	def __init__(self, args):
 
-		self.batch_size = 32
+		self.batch_size = 2
 		self.args = args
 		self.max_pts_in_voxel = 20
 		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
