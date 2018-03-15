@@ -37,15 +37,15 @@ class Main(object):
 
 	def __init__(self, args):
 
-		self.batch_size = 2
+		self.batch_size = 128
 		self.args = args
 		self.max_pts_in_voxel = 20
 		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
 		self.transform = transforms.Compose([transforms.ToTensor()])
 		self.train_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
-		self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.train_dataset.collate_fn)
+		self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8, collate_fn=self.train_dataset.collate_fn)
 		self.val_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
-		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.val_dataset.collate_fn)
+		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8, collate_fn=self.val_dataset.collate_fn)
 		
 		# self.load_model()
 		self.h = 20
@@ -100,7 +100,7 @@ class Main(object):
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
 
 			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
-			train_loss += [loss.data[0]]
+			train_loss += [loss.data[0]/chamfer_gt.size(0)]
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(train) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
 					'Loss {net_loss:.4f}\t'.format(
@@ -126,7 +126,7 @@ class Main(object):
 			voxel_features = Variable(voxel_features)
 			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
 			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
-			vfe_output = Variable(torch.zeros(self.batch_size*self.h*self.w,128))
+			vfe_output = Variable(torch.zeros(chamfer_gt.size(0)*self.h*self.w,128))
             
 			if self.use_cuda:
 				voxel_features = voxel_features.cuda()
@@ -137,7 +137,7 @@ class Main(object):
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
 
 			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
-			val_loss += [loss.data[0]]
+			val_loss += [loss.data[0]/chamfer_gt.size(0)]
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(val) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
 					'Loss {loss:.4f}\t'.format(
@@ -149,12 +149,12 @@ class Main(object):
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Dense LiDarNet Training')
-	parser.add_argument('--lr', default=1e-7, type=float, help='learning rate')
-	parser.add_argument('--resume', '-r', default=False, type=bool, help='resume from checkpoint')
+	parser.add_argument('--lr', default=1e-9, type=float, help='learning rate')
+	#parser.add_argument('--resume', '-r', default=False, type=bool, help='resume from checkpoint')
 	parser.add_argument('--epochs', default=10000, type=int, metavar='N', help='number of total epochs to run')
 	parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 	parser.add_argument('--print-freq', '-p', default=10, type=int, metavar='N', help='print frequency (default: 10)')
-	parser.add_argument('--resume2', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
+	parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
 	parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 	args = parser.parse_args()
     
@@ -196,10 +196,10 @@ if __name__ == '__main__':
 		# old_params = []
 		# for i in range(len(list(net.net.parameters()))):
 		# 	old_params.append(list(net.net.parameters())[i])
-            
+		old = time.time()    
 		train_stats = net.train(epoch)
 		train_loss += [np.mean(train_stats)]
-
+		print(time.time() - old)
 		# for i in range(len(list(net.net.parameters()))):
 		# 	print("weight update for parameter : ", i, not torch.equal(old_params[i].data, list(net.net.parameters())[i].data))
 
