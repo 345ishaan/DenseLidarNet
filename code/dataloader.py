@@ -8,7 +8,10 @@ import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 from voxelize import voxelize_lidar
-import cPickle as pkl
+if sys.version_info >= (3,0):
+	import _pickle as pkl
+else:
+	import cPickle as pkl
 from PIL import Image,ImageDraw
 
 

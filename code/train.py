@@ -2,8 +2,16 @@ from __future__ import print_function
 
 import os
 import argparse
-from ipdb import set_trace as brk
+from pdb import set_trace as brk
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
+
+import time
 from logger import Logger
+import shutil
+import sys
 
 import torch
 import torch.nn as nn
@@ -20,27 +28,43 @@ from dataloader import DenseLidarGen
 from chamfer_loss import *
 from vfe_layer import *
 
-
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+	torch.save(state, filename)
+	if is_best:
+		shutil.copyfile(filename, 'model_best.pth.tar')
 
 class Main(object):
 
-	def __init__(self):
+	def __init__(self, args):
 
-		self.batch_size = 2
+		self.batch_size = 128
+		self.args = args
 		self.max_pts_in_voxel = 20
-		self.logger = Logger('./logs')
-		self.transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225))])
-		self.dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
-		self.dataloader = torch.utils.data.DataLoader(self.dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.dataset.collate_fn)
+		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
+		self.transform = transforms.Compose([transforms.ToTensor()])
+		self.train_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
+		self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8, collate_fn=self.train_dataset.collate_fn)
+		self.val_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
+		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8, collate_fn=self.val_dataset.collate_fn)
 		
 		# self.load_model()
 		self.h = 20
 		self.w = 10
+		self.use_cuda = torch.cuda.is_available()        
 		self.load_model()
 		self.criterion = ChamferLoss()
 		self.optimizer = optim.SGD(self.net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
+		self.run_time = time.ctime().replace(' ', '_')[:-8]
+		directory = 'progress/' + self.run_time
+		if not os.path.exists(directory):
+			os.makedirs(directory)
+		self.logger = Logger('directory')
 
-
+	def plot_stats(self, epoch, data_1, data_2, label_1, label_2, plt):
+		plt.plot(range(epoch), data_1, 'r--', label=label_1)
+		if data_2 is not None:
+			plt.plot(range(epoch), data_2, 'g--', label=label_2)
+		plt.legend()
 
 	def load_model(self):
 		self.net  = DenseLidarNet()
@@ -48,50 +72,156 @@ class Main(object):
 		# assert torch.cuda.is_available(), 'Error: CUDA not found!'
 		
 		# self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
-		# self.net.cuda()
-
-
-	def train(self):
-
-		train_loss = 0
-		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.dataloader):
+		if self.use_cuda:
+			self.net.cuda()
+        
+	def adjust_learning_rate(self, optimizer, epoch, base_lr):
+		"""Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+		lr = base_lr * (0.1 ** (epoch // 400))
+		for param_group in optimizer.param_groups:
+			param_group['lr'] = lr
+            
+	def train(self, epoch):
+		train_loss = []
+		self.net.train()
+		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.train_dataloader):
+			#brk()
 			voxel_features = Variable(voxel_features)
-			voxel_mask = Variable(voxel_mask.squeeze())
+			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
 			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
-			vfe_output = Variable(torch.zeros(self.batch_size*self.h*self.w,128))
+			vfe_output = Variable(torch.zeros(chamfer_gt.size(0)*self.h*self.w,128))
+            
+			if self.use_cuda:
+				voxel_features = voxel_features.cuda()
+				voxel_mask = voxel_mask.cuda()
+				voxel_indices = voxel_indices.cuda()
+				vfe_output = vfe_output.cuda()
 
-			self.optimizer.zero_grad()
-			
 			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
-			loss = criterion(xyz_output, chamfer_gt)
-			train_loss += loss.data[0]
-			print('train_loss: %.3f' % (loss.data[0])
 
+			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
+			train_loss += [loss.data[0]/chamfer_gt.size(0)]
+			if batch_idx % self.args.print_freq == 0:
+				progress_stats = '(train) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
+					'Loss {net_loss:.4f}\t'.format(
+					time.ctime()[:-8], epoch, batch_idx, len(self.train_dataloader), net_loss=loss.data[0])
+				print(progress_stats)
+			self.optimizer.zero_grad()
+			#brk()
 			loss.backward()
-        	self.optimizer.step()
-			
-			torch.save(self.net.state_dict(), '../../model_state.pth')
-			torch.save(self.optimizer.state_dict(), '../../opt_state.pth')
+			#brk()
+			self.optimizer.step()
 
-			
-		
+			#torch.save(self.net.state_dict(), '../../model_state.pth')
+			#torch.save(self.optimizer.state_dict(), '../../opt_state.pth')
+            
+			#for param in self.net.parameters():
+			#	print(param.data)			
+		return train_loss
 
+	def validate(self):
+		val_loss = []
+		self.net.eval()
+		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.val_dataloader):
+			voxel_features = Variable(voxel_features)
+			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
+			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
+			vfe_output = Variable(torch.zeros(chamfer_gt.size(0)*self.h*self.w,128))
+            
+			if self.use_cuda:
+				voxel_features = voxel_features.cuda()
+				voxel_mask = voxel_mask.cuda()
+				voxel_indices = voxel_indices.cuda()
+				vfe_output = vfe_output.cuda()
 
+			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
+
+			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
+			val_loss += [loss.data[0]/chamfer_gt.size(0)]
+			if batch_idx % self.args.print_freq == 0:
+				progress_stats = '(val) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
+					'Loss {loss:.4f}\t'.format(
+					time.ctime()[:-8], epoch, batch_idx, len(self.val_dataloader), loss=loss.data[0])
+				print(progress_stats)
+		return val_loss
+
+        
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Dense LiDarNet Training')
-	parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
-	parser.add_argument('--resume', '-r', default=False, type=bool, help='resume from checkpoint')
+	parser.add_argument('--lr', default=1e-9, type=float, help='learning rate')
+	#parser.add_argument('--resume', '-r', default=False, type=bool, help='resume from checkpoint')
+	parser.add_argument('--epochs', default=10000, type=int, metavar='N', help='number of total epochs to run')
+	parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
+	parser.add_argument('--print-freq', '-p', default=10, type=int, metavar='N', help='print frequency (default: 10)')
+	parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
+	parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 	args = parser.parse_args()
-
+    
 	print ("****************************************************************************************")
 	print ("Using Learning Rate     ==============> {}".format(args.lr))
 	print ("Loading from checkpoint ==============> {}".format(args.resume))
+	print ("GPU processing available : ", torch.cuda.is_available())
+	print ("Number of GPU units available :", torch.cuda.device_count())
 	print ("****************************************************************************************")
 
+	net = Main(args)
+	train_loss = []
+	val_loss = []
+	best_loss = np.inf
+	if args.resume:
+		if os.path.isfile(args.resume):
+			print("=> loading checkpoint '{}'".format(args.resume))
+			checkpoint = torch.load(args.resume)
+			args.start_epoch = checkpoint['epoch']
+			best_loss = checkpoint['best_loss']
+			net.net.load_state_dict(checkpoint['state_dict'])
+			net.optimizer.load_state_dict(checkpoint['optimizer'])
+			train_loss += checkpoint['train_loss']
+			val_loss += checkpoint['val_loss']
+			print("=> loaded checkpoint '{}' (epoch {})"
+				.format(args.resume, checkpoint['epoch']))
+		else:
+			print("=> no checkpoint found at '{}'".format(args.resume))
 
-	net = Main()
-	net.train()
-	
-			
+	if args.evaluate:
+		val_stats = net.validate()
+		print("VALIDATE : avg loss = ", np.mean(val_stats))
+		sys.exit(0)
+
+	for epoch in range(args.start_epoch, args.epochs + args.start_epoch):
+		net.adjust_learning_rate(net.optimizer, epoch, args.lr)
+        
+		# uncomment following two series of code block to verify if backpropgation is happening properly
+		# old_params = []
+		# for i in range(len(list(net.net.parameters()))):
+		# 	old_params.append(list(net.net.parameters())[i])
+		old = time.time()    
+		train_stats = net.train(epoch)
+		train_loss += [np.mean(train_stats)]
+		print(time.time() - old)
+		# for i in range(len(list(net.net.parameters()))):
+		# 	print("weight update for parameter : ", i, not torch.equal(old_params[i].data, list(net.net.parameters())[i].data))
+
+		val_stats = 0
+		#val_stats = net.validate()
+		#val_loss += [val_stats]
+		#print("VALIDATE avg loss = ", np.mean(val_stats))
+        
+		# remember best val loss and save checkpoint
+		is_best = val_stats < best_loss
+		best_loss = max(val_stats, best_loss)
+		save_checkpoint({
+			'train_loss':train_loss,
+			'val_loss':val_loss,
+			'epoch': epoch + 1,
+			'state_dict': net.net.state_dict(),
+			'best_loss': best_loss,
+			'optimizer' : net.optimizer.state_dict(),
+		}, is_best)
+        
+		plt.figure(figsize=(12,12))
+		net.plot_stats(epoch+1, train_loss, None, 'train_loss', 'val_loss', plt)
+		plt.savefig('progress/' + net.run_time + '/stats.jpg')
+		plt.clf()
 
