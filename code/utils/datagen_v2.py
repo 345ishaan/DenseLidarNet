@@ -4,7 +4,7 @@ import glob
 from math import sin,cos
 import cPickle as pkl
 from tqdm import tqdm
-# from PIL import Image, ImageDraw,ImageFont
+from PIL import Image, ImageDraw,ImageFont
 import cv2
 from parseTrackletXML import *
 from ipdb import set_trace as brk
@@ -36,13 +36,6 @@ class DataLoader(object):
 		self.bev_y_range=[-30.0,30.0]
 
 		self.dump_dir = '../../data/'
-
-
-		
-		#self.fourcc = cv2.VideoWriter_fourcc(*'XVID')
-		#self.bev_video = cv2.VideoWriter(self.video_dir_path + 'bev_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(600, 1400))
-		#self.res_3d_video = cv2.VideoWriter(self.video_dir_path + 'res_3d_video_seq_'+ self.seq_id + '.avi',self.fourcc,30.0,(1242, 375))
-
 
 		self.counter =0
 		self.max_iters = 100#sys.maxint
@@ -144,7 +137,6 @@ class DataLoader(object):
 			bird_view = cur_bev
 
 		if pts is not None:
-			# valid_idx = np.where((pts[:,0] > min_x) & (pts[:,0] < max_x) & (pts[:,1] > min_y) & (pts[:,1] < max_y))[0]
 			valid_idx = np.where((pts[:,2] > min_x) & (pts[:,2] < max_x) & (pts[:,0] > min_y) & (pts[:,0] < max_y))[0]
 			valid_pts = pts[valid_idx,:]
 			
@@ -162,32 +154,6 @@ class DataLoader(object):
 				bird_view[valid_pts[:,0],valid_pts[:,1],2] =0
 
 		return bird_view
-
-	# def get_all_tracklets(self):
-	# 	self.tracklet_data = parse_XML(self.tracklet_path,self.num_frames,object_of_interest=self.objects)
-
-	# def get_tracklet_pts(self,lidar_pts,rot_mat,center,dims):
-	# 	'''
-	# 	Note
-	# 	The ground plane is not straight, hence we can't keep the z range check
-	# 		Need to clarify 
-	# 	'''
-
-	# 	l,w,h = dims
-	# 	# brk()
-	# 	# tf_pts = (np.asarray(rot_mat).T.dot((lidar_pts[:,:3] - center.reshape(-1,3)).T)).T
-	# 	diff = (lidar_pts[:,:3] - center.reshape(-1,3)).T
-	# 	tf_pts = np.asarray(rot_mat).dot(diff)
-	# 	tf_pts = tf_pts.T
-	# 	# np.hstack((tf_pts, lidar_pts[:,3:]))
-
-	# 	valid_pts = np.where(#(tf_pts[:,1] >= -h) & (tf_pts[:,1] <= 0) &\
-	# 						 (tf_pts[:,0] <= w/2) & (tf_pts[:,0] >= -w/2) &\
-	# 						 (tf_pts[:,2] <= l/2) & (tf_pts[:,2] >= -l/2) )[0]
-
-		
-
-	# 	return {'lidar_pts' : lidar_pts[valid_pts,:], 'tf_pts': tf_pts[valid_pts,:], 'center': center, 'dims': dims}
 
 	def get_all_tracklets(self):
 		self.tracklet_data = parse_XML(self.tracklet_path,self.num_frames,object_of_interest=self.objects)
@@ -289,24 +255,14 @@ class DataLoader(object):
 			
 			bird_view = self.gen_bird_view(pts=all_lidar_pts_camera)
 
-			# bird_view[:,:,:] = 0
 
 			for i in range(len(label_info['loc_x'])):
 				translation = np.asarray([label_info['loc_x'][i],label_info['loc_y'][i],label_info['loc_z'][i]])
 				rot_mat =[[cos(label_info['yaw'][i]),0,sin(label_info['yaw'][i])],[0,1,0],[-sin(label_info['yaw'][i]),0,cos(label_info['yaw'][i])]]
 				rot_mat_t =[[cos(label_info['yaw'][i]),0,-sin(label_info['yaw'][i])],[0,1,0],[sin(label_info['yaw'][i]),0,cos(label_info['yaw'][i])]]
 
-				
-				# if lidar_dict['tf_pts'].shape[0] < 1000:
-				# 	continue
-
-				# print ("Number of Lidar Pts : {}".format(lidar_dict['tf_pts'].shape))
-				# bird_view = self.gen_bird_view(pts=lidar_dict['lidar_pts'],use_bev=True,cur_bev=bird_view)
-				
 				file_save_name = str(file_id) + '_' + str(i)
 				
-				# pkl.dump(lidar_dict['tf_pts'],open(os.path.join(self.tf_pts_dump_path,file_save_name+'_.pkl'),'wb'))
-				# pkl.dump(lidar_dict['lidar_pts'],open(os.path.join(self.lidar_pts_dump_path,file_save_name+'_.pkl'),'wb'))
 
 				meta_fp = open(os.path.join(self.meta_info,file_save_name+'_.txt'),'wb')
 				meta_fp.write('{},{},{}'.format(img_fname,label_info['xmin'][i],label_info['ymin'][i],label_info['xmax'][i],label_info['ymax'][i]))
@@ -329,12 +285,6 @@ class DataLoader(object):
 				x_cords = trans_rot_vertices[0,:]
 				z_cords = trans_rot_vertices[2,:]
 
-				# min_x = (np.min(x_cords) - self.bev_y_range[0])/(self.bev_resolution[0])
-				# max_x = (np.max(x_cords) - self.bev_y_range[0])/(self.bev_resolution[0])
-				# min_z = (np.min(z_cords) - self.bev_x_range[0])/(self.bev_resolution[1])
-				# max_z = (np.max(z_cords) - self.bev_x_range[0])/(self.bev_resolution[1])
-				
-				# self.draw_rectangle_cv(bird_view,(min_x,min_z,max_x,max_z))
 				lidar_dict = self.get_tracklet_pts(all_lidar_pts_camera,x_cords,z_cords)
 				if lidar_dict['lidar_pts'].shape[0] >= 500:
 					self.count_valid_objects += 1
@@ -352,14 +302,10 @@ class DataLoader(object):
 				y3 =  int((z_cords[2] - self.bev_x_range[0])/(self.bev_resolution[0]))
 				y4 =  int((z_cords[3] - self.bev_x_range[0])/(self.bev_resolution[0]))
 
-				# color = (0,255,0)
 				cv2.line(bird_view,(x1,y1),(x2,y2),color,2)
 				cv2.line(bird_view,(x2,y2),(x3,y3),color,2)
 				cv2.line(bird_view,(x3,y3),(x4,y4),color,2)
 				cv2.line(bird_view,(x4,y4),(x1,y1),color,2)
-
-				
-				# paint_indices = np.where()
 			
 				pts_in_2d = self.compute_3d_vertices(label_info['yaw'][i],translation,(label_info['l'][i],label_info['w'][i],label_info['h'][i]),P)
 				
@@ -372,19 +318,9 @@ class DataLoader(object):
 				break
 		print "Found {} Valid Objects".format(self.count_valid_objects)
 			
-			
-			
-			
 
 	def get_all_annt(self):
 
-		# gt_seq_id_path = self.gt_path + str(self.seq_id)
-		
-		# try:
-  #       	os.makedirs(gt_seq_id_path)
-  #   	except OSError as exception:
-  #       	if exception.errno != errno.EEXIST:
-  #          		raise
 		idx_list = []
 		dim_list = []
 		hf_idx = h5py.File(self.gt_path + self.seq_id + '_' + 'idx.h5', 'w')
@@ -396,8 +332,7 @@ class DataLoader(object):
 			frm_data = self.tracklet_data[i]
 			img_bgr = self.get_image_data(i)
 			all_lidar_pts = self.get_lidar_pts(i)
-			# all_lidar_pts = all_lidar_pts[:,:3]
-
+			
 			global_bev = self.gen_bird_view()
 
 			for j in range(len(frm_data)):
@@ -447,13 +382,7 @@ class DataLoader(object):
 		hf_bbox.close()		
 		hf_idx.close()
 		
-		#self.bev_video.release()
-		#self.res_3d_video.release()
-		#print(self.seq_id + '-->', np.array(dim_list).mean(axis=0))
-		# with open(self.gt_path + str(self.seq_id) + '.pkl', 'wb') as f:
-			# pickle.dump(self.filtered_lidar_pts, f)
-
-
+		
 if __name__ == '__main__':
 	gt_datagen = DataLoader()
 	gt_datagen.get_all_annts()
