@@ -2,12 +2,14 @@ from __future__ import print_function
 
 import os
 import sys
+import glob
 import random
 import numpy as np
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 from voxelize import voxelize_lidar
+from ipdb import set_trace as brk
 if sys.version_info >= (3,0):
 	import _pickle as pkl
 else:
@@ -17,22 +19,43 @@ from PIL import Image,ImageDraw
 
 class DenseLidarGen(data.Dataset):
 
-	def __init__(self,annt_file,data_root,transform):
-		self.data_root = data_root
-		self.annt_file = annt_file
+	def __init__(self,lidar_pts_path,tf_lidar_pts_path,bbox_info_path,transform):
+		self.lidar_pts_path = lidar_pts_path
+		self.tf_lidar_pts_path = tf_lidar_pts_path
+		self.bbox_info_path = bbox_info_path
 		self.transform = transform
-		self.annts = pkl.load(open(annt_file,'rb'))
-		self.num_samples = len(self.annts)
-		np.random.shuffle(self.annts)
+
+		self.tf_lidar_pts_files = glob.glob(os.path.join(self.tf_lidar_pts_path,"*.npy"))
+		self.lidar_pts_files = glob.glob(os.path.join(self.lidar_pts_path,"*.npy"))
+		self.bbox_info_files = glob.glob(os.path.join(self.bbox_info_path,"*.txt"))
+		self.num_samples = len(self.tf_lidar_pts_files)
+		self.dx = 0.2
+		self.dz = 0.2
+		#Assuming max width of vehicle to be 2
+		self.max_x = 1
+		self.min_x = -1
+		#Assuming max length of vehicle to be 4
+		self.max_z = 2
+		self.min_z = -2
+
+		self.max_y = 0.4
+		self.min_y = -3
+
+		self.max_pts_in_voxel = 35
+
+		self.max_pred_pts = 500
+		
 
 	def __getitem__(self,idx):
-		seq_id = self.annts[idx][0]
-		fnum_id = self.annts[idx][1]
-		bbox_data = self.annts[idx][2:6]
-		lidar_path = self.annts[idx][6]
-		tf_lidar_path = self.annts[idx][7]
-		img_path = os.path.join(self.data_root,str(seq_id),'image_02','data','%.10d'%(idx)+'.png')
-		return img_path,bbox_data,lidar_path,tf_lidar_path
+		fname = self.tf_lidar_pts_files[idx].split('/')[-1]
+		tf_lidar_pts = np.load(self.tf_lidar_pts_files[idx])
+		lidar_pts = np.load(os.path.join(self.lidar_pts_path,fname))
+		voxel_features,voxel_indices,voxel_mask = voxelize_lidar(lidar_pts,tf_lidar_pts,\
+			self.dx,self.dz,self.max_x,self.min_x,self.max_y,self.min_y,self.max_z,self.min_z,self.max_pts_in_voxel)
+		
+		gt_pts = tf_lidar_pts[np.random.choice(tf_lidar_pts.shape[0],self.max_pred_pts,replace=False),:3]
+		return voxel_features,voxel_indices,voxel_mask,gt_pts
+	
 
 	def __len__(self):
 		return self.num_samples
@@ -45,39 +68,19 @@ class DenseLidarGen(data.Dataset):
 		batch_voxel_mask=[]	
 		batch_voxel_indices=[]
 		batch_chamfer_gt = []
-
-
-		v_w=0.2
-		v_h=0.2
-		max_l=4
-		max_w=2
-		voxel_map_h = int(max_l/v_h)
-		voxel_map_w = int(max_w/v_w)
-		voxel_id_offset = 0
-		num_voxels =voxel_map_w*voxel_map_h
-		max_pts_in_voxel = 35
 		
-		
-		for img_path,bbox_data,lidar_path,tf_lidar_path in samples:
-			lidar_data = pkl.load(open(lidar_path,'rb'))
-			tf_lidar_data = pkl.load(open(tf_lidar_path,'rb'))
-
-			voxel_features,voxel_indices,voxel_mask = voxelize_lidar(lidar_data,tf_lidar_data,voxel_id_offset,voxel_map_h,voxel_map_w,num_voxels,max_pts_in_voxel,v_w,v_h,max_w,max_l)
-			if type(voxel_features) != list:
-				voxel_id_offset += num_voxels
-				batch_voxel_data.append(voxel_features)
-				batch_voxel_mask.append(voxel_mask)
-				batch_voxel_indices.extend(voxel_indices)
-
-				the_pts = tf_lidar_data[np.random.choice(tf_lidar_data.shape[0],1000,replace=False),:3] # change to F
-				batch_chamfer_gt.append(torch.FloatTensor(the_pts).unsqueeze(0))
-
+		for voxel_features,voxel_indices,voxel_mask,gt_pts in samples:
+			if not len(voxel_features):
+				continue
+			batch_voxel_data.append(voxel_features)
+			batch_voxel_mask.append(voxel_mask)
+			batch_voxel_indices.append(voxel_indices)
+			batch_chamfer_gt.append(gt_pts)
 		
 		if len(batch_voxel_data) == 0:
 			return [],[],[],[]
 		
-		return torch.cat(batch_voxel_data,0),torch.cat(batch_voxel_mask,0),\
-				torch.LongTensor((batch_voxel_indices)),torch.cat(batch_chamfer_gt,0)
+		return batch_voxel_data,batch_voxel_mask,batch_voxel_indices,batch_chamfer_gt
 
 if __name__ == '__main__':
 	import torchvision
@@ -88,30 +91,15 @@ if __name__ == '__main__':
 	transform = transforms.Compose([
 		transforms.ToTensor()
 	])
-	dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','./imgs',transform)
-	dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)
+	lidar_pts_path = "../data/lidar_pts"
+	tf_lidar_pts_path = "../data/tf_lidar_pts"
+	bbox_info_path = "../data/bbox_info"
 
-	
-	niters = 0
-	max_iters = 1000000
-	dump_path = './dbg'
-	
-	if not os.path.exists(dump_path):
-		os.makedirs(dump_path)
-	else:
-		map(lambda x: os.unlink(os.path.join(dump_path,x)), os.listdir(dump_path)) 
-
-	while niters < max_iters:
-
-		for voxel_features,voxel_mask,voxel_indices,gt in dataloader:
-			if(type(voxel_features) == list):
-				continue
-
-			print (voxel_features.size())
-			print (voxel_mask.size())
-			print (voxel_indices.size())
-			print (gt.size())
-			niters += 1
-
-			if niters >max_iters:
-				break
+	dataset = DenseLidarGen(lidar_pts_path,tf_lidar_pts_path,bbox_info_path,transform)
+	dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)
+		
+	for voxel_data,voxel_mask,voxel_indices,voxel_gt in dataloader:
+		print (voxel_data[0].shape)
+		print (voxel_mask[0].shape)
+		print (voxel_indices[0].shape)
+		print (voxel_gt[0].shape)
