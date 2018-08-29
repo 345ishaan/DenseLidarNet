@@ -14,36 +14,33 @@ class DataLoader(object):
 
 	def __init__(self,train_val_split=0.2):
 		
-		self.kitti_img_dir = '../../data/images/training/image_2/'
-		self.kitti_calib_dir = '../../data/calibration/training/calib/'
-		self.kitti_label_dir = '../../data/labels/label_2/'
-		self.kitti_lidar_dir = '../../data/lidar/training/velodyne'
-		
-		self.model_op_files = sorted(glob.glob('./dump_3d_data/kitti_train/14/*.txt'))
-		self.kitti_label_files = sorted(glob.glob(self.kitti_label_dir+'/*.txt'))
-		np.random.shuffle(self.kitti_label_files)
-
-		self.train_label_files = self.kitti_label_files[:int(len(self.kitti_label_files)*(1-train_val_split))]
-		self.val_label_files = self.kitti_label_files[int(len(self.kitti_label_files)*(1-train_val_split)):]
-		
-		self.num_train_files = len(self.train_label_files)
-		self.num_val_files = len(self.val_label_files)
-
-		print ("{} Train Files, {} Validation Files".format(self.num_train_files,self.num_val_files))
-
+		self.kitti_img_dir = '/tmp/images/training/image_2/'
+		self.kitti_calib_dir = '/tmp/calibration/training/calib/'
+		self.kitti_label_dir = '/tmp/labels/training/label_2/'
+		self.kitti_lidar_dir = '/tmp/lidar/training/velodyne'
+		self.train_label_files = sorted(glob.glob(os.path.join(self.kitti_label_dir,"*.txt")))		
 		self.bev_resolution=[0.1,0.1]
 		self.bev_x_range=[-70.0,70.0]
 		self.bev_y_range=[-30.0,30.0]
 
-		self.dump_dir = '../../data/'
+		self.dump_dir = '/tmp/DenseLidarNet'
 
 		self.counter =0
-		self.max_iters = 100#sys.maxint
+		self.max_iters = sys.maxint
 		
 		self.objects = ['Car','Van','Truck']
 		
 		self.filtered_lidar_pts = []
 		self.count_valid_objects = 0
+		self.vis = False
+		self.tf_lidar_pts_path = os.path.join(self.dump_dir,'tf_lidar_pts')
+		self.lidar_pts_path = os.path.join(self.dump_dir,'lidar_pts')
+		self.bbox_info_path = os.path.join(self.dump_dir,'bbox_info')
+		self.check_path(self.lidar_pts_path)
+		self.check_path(self.bbox_info_path)
+		self.check_path(self.tf_lidar_pts_path)
+		self.min_num_lidar_pts = 500
+				
 
 	def read_kitti_labels(self,index):
 		f = open(index,'rb')
@@ -207,18 +204,18 @@ class DataLoader(object):
 		if not os.path.exists(path):
 			os.makedirs(path)
 		else:
-			map(lambda x :os.unlink(os.path.join(path,x)), os.listdir(path))
+			for x in os.listdir(path):
+				if os.path.isfile(os.path.join(path,x)):
+					os.unlink(os.path.join(path,x))
+				else:
+					map(lambda y :os.unlink(os.path.join(path,x,y)), os.listdir(os.path.join(path,x)))
+		
 
 	def get_all_annts(self):
 		
-		self.dump_path = os.path.join(self.dump_dir,'dump');self.check_path(self.dump_path)
-		self.tf_pts_dump_path = os.path.join(self.dump_dir,'tf_lidar_pts');self.check_path(self.tf_pts_dump_path)
-		self.lidar_pts_dump_path = os.path.join(self.dump_dir,'lidar_pts');self.check_path(self.lidar_pts_dump_path)
-		self.meta_info = os.path.join(self.dump_dir,'meta_info');self.check_path(self.meta_info);self.check_path(self.meta_info)
-
 		for it,file in tqdm(enumerate(self.train_label_files)):
 			file_id = file.split('/')[-1].split('.')[0]
-			
+				
 			img_fname = self.kitti_img_dir+file.split('/')[-1].replace('txt','png')
 			
 			lidar_fname = os.path.join(self.kitti_lidar_dir,file.split('/')[-1].replace('txt','bin'))
@@ -264,9 +261,9 @@ class DataLoader(object):
 				file_save_name = str(file_id) + '_' + str(i)
 				
 
-				meta_fp = open(os.path.join(self.meta_info,file_save_name+'_.txt'),'wb')
-				meta_fp.write('{},{},{}'.format(img_fname,label_info['xmin'][i],label_info['ymin'][i],label_info['xmax'][i],label_info['ymax'][i]))
-				meta_fp.close()
+				#meta_fp = open(os.path.join(self.meta_info,file_save_name+'_.txt'),'wb')
+				#meta_fp.write('{},{},{}'.format(img_fname,label_info['xmin'][i],label_info['ymin'][i],label_info['xmax'][i],label_info['ymax'][i]))
+				#meta_fp.close()
 
 				
 				l, w,h = label_info['l'][i],label_info['w'][i],label_info['h'][i]
@@ -286,9 +283,17 @@ class DataLoader(object):
 				z_cords = trans_rot_vertices[2,:]
 
 				lidar_dict = self.get_tracklet_pts(all_lidar_pts_camera,x_cords,z_cords)
-				if lidar_dict['lidar_pts'].shape[0] >= 500:
+				if lidar_dict['lidar_pts'].shape[0] >= self.min_num_lidar_pts:
+					tf_lidar_points = np.asarray(rot_mat_t).dot(np.asarray(lidar_dict['lidar_pts']).T[:-1,:] - np.asarray(translation).reshape(3,1))
+					
 					self.count_valid_objects += 1
 					color = (0,255,0)
+					np.save(os.path.join(self.lidar_pts_path,'{}_{}.npy'.format(file_id,i)),lidar_dict['lidar_pts'])
+					np.save(os.path.join(self.tf_lidar_pts_path,'{}_{}.npy'.format(file_id,i)),tf_lidar_points.T)
+					
+					fp  = open(os.path.join(self.bbox_info_path,'{}_{}.txt'.format(file_id,i)),'w')
+					fp.write("{},{},{},{},{},{},{},{},{},{},{}\n".format(label_info['xmin'][i],label_info['ymin'][i],label_info['xmax'][i],label_info['ymax'][i],label_info['loc_x'][i],label_info['loc_y'][i],label_info['loc_z'][i],label_info['l'][i],label_info['w'][i],label_info['h'][i],label_info['yaw']))
+					fp.close()
 				else:
 					color = (0,0,255)
 				bird_view = self.gen_bird_view(pts=lidar_dict['lidar_pts'],use_bev=True,cur_bev=bird_view)
@@ -301,18 +306,18 @@ class DataLoader(object):
 				y2 =  int((z_cords[1] - self.bev_x_range[0])/(self.bev_resolution[0]))
 				y3 =  int((z_cords[2] - self.bev_x_range[0])/(self.bev_resolution[0]))
 				y4 =  int((z_cords[3] - self.bev_x_range[0])/(self.bev_resolution[0]))
-
-				cv2.line(bird_view,(x1,y1),(x2,y2),color,2)
-				cv2.line(bird_view,(x2,y2),(x3,y3),color,2)
-				cv2.line(bird_view,(x3,y3),(x4,y4),color,2)
-				cv2.line(bird_view,(x4,y4),(x1,y1),color,2)
+				if self.vis:
+					cv2.line(bird_view,(x1,y1),(x2,y2),color,2)
+					cv2.line(bird_view,(x2,y2),(x3,y3),color,2)
+					cv2.line(bird_view,(x3,y3),(x4,y4),color,2)
+					cv2.line(bird_view,(x4,y4),(x1,y1),color,2)
 			
 				pts_in_2d = self.compute_3d_vertices(label_info['yaw'][i],translation,(label_info['l'][i],label_info['w'][i],label_info['h'][i]),P)
-				
-				self.draw_3d_box(img_bgr,pts_in_2d.astype(np.int32))
-
-			cv2.imwrite(os.path.join(self.dump_path,'bev_{}.png').format(file_id),bird_view)
-			cv2.imwrite(os.path.join(self.dump_path,'bgr_{}.png').format(file_id),img_bgr)
+				if self.vis:
+					self.draw_3d_box(img_bgr,pts_in_2d.astype(np.int32))
+			if self.vis:	
+				cv2.imwrite(os.path.join(self.dump_path,'bev_{}.png').format(file_id),bird_view)
+				cv2.imwrite(os.path.join(self.dump_path,'bgr_{}.png').format(file_id),img_bgr)
 			
 			if it > self.max_iters:
 				break
