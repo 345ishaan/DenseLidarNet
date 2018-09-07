@@ -42,9 +42,9 @@ class DenseLidarGen(data.Dataset):
 		self.min_y = -3
 
 		self.max_pts_in_voxel = 35
-
-		self.max_pred_pts = 500
 		
+		#This number can not go bigger than the threshold set while dumping data
+		self.max_pred_pts = 500
 
 	def __getitem__(self,idx):
 		fname = self.tf_lidar_pts_files[idx].split('/')[-1]
@@ -52,7 +52,6 @@ class DenseLidarGen(data.Dataset):
 		lidar_pts = np.load(os.path.join(self.lidar_pts_path,fname))
 		voxel_features,voxel_indices,voxel_mask = voxelize_lidar(lidar_pts,tf_lidar_pts,\
 			self.dx,self.dz,self.max_x,self.min_x,self.max_y,self.min_y,self.max_z,self.min_z,self.max_pts_in_voxel)
-		
 		gt_pts = tf_lidar_pts[np.random.choice(tf_lidar_pts.shape[0],self.max_pred_pts,replace=False),:3]
 		return voxel_features,voxel_indices,voxel_mask,gt_pts
 	
@@ -91,9 +90,9 @@ if __name__ == '__main__':
 	transform = transforms.Compose([
 		transforms.ToTensor()
 	])
-	lidar_pts_path = "../data/lidar_pts"
-	tf_lidar_pts_path = "../data/tf_lidar_pts"
-	bbox_info_path = "../data/bbox_info"
+	lidar_pts_path = "/tmp/DenseLidarNet/lidar_pts"
+	tf_lidar_pts_path = "/tmp/tf_lidar_pts"
+	bbox_info_path = "/tmp/DenseLidarNet/bbox_info"
 
 	dataset = DenseLidarGen(lidar_pts_path,tf_lidar_pts_path,bbox_info_path,transform)
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)

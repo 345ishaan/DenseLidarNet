@@ -14,10 +14,10 @@ class DataLoader(object):
 
 	def __init__(self,train_val_split=0.2):
 		
-		self.kitti_img_dir = '/tmp/images/training/image_2/'
-		self.kitti_calib_dir = '/tmp/calibration/training/calib/'
-		self.kitti_label_dir = '/tmp/labels/training/label_2/'
-		self.kitti_lidar_dir = '/tmp/lidar/training/velodyne'
+		self.kitti_img_dir = '/tmp/data/KITTI_3D/images/training/image_2/'
+		self.kitti_calib_dir = '/tmp/data/KITTI_3D/calibration/training/calib/'
+		self.kitti_label_dir = '/tmp/data/KITTI_3D/labels/training/label_2/'
+		self.kitti_lidar_dir = '/tmp/data/KITTI_3D/lidar/training/velodyne'
 		self.train_label_files = sorted(glob.glob(os.path.join(self.kitti_label_dir,"*.txt")))		
 		self.bev_resolution=[0.1,0.1]
 		self.bev_x_range=[-70.0,70.0]
@@ -292,29 +292,35 @@ class DataLoader(object):
 					np.save(os.path.join(self.tf_lidar_pts_path,'{}_{}.npy'.format(file_id,i)),tf_lidar_points.T)
 					
 					fp  = open(os.path.join(self.bbox_info_path,'{}_{}.txt'.format(file_id,i)),'w')
-					fp.write("{},{},{},{},{},{},{},{},{},{},{}\n".format(label_info['xmin'][i],label_info['ymin'][i],label_info['xmax'][i],label_info['ymax'][i],label_info['loc_x'][i],label_info['loc_y'][i],label_info['loc_z'][i],label_info['l'][i],label_info['w'][i],label_info['h'][i],label_info['yaw']))
+					fp.write("{},{},{},{},{},{},{},{},{},{},{}\n".format(label_info['xmin'][i],\
+										     label_info['ymin'][i],label_info['xmax'][i],\
+										     label_info['ymax'][i],label_info['loc_x'][i],\
+										     label_info['loc_y'][i],label_info['loc_z'][i],\
+										     label_info['l'][i],label_info['w'][i],\
+										     label_info['h'][i],label_info['yaw']))
 					fp.close()
-				else:
-					color = (0,0,255)
-				bird_view = self.gen_bird_view(pts=lidar_dict['lidar_pts'],use_bev=True,cur_bev=bird_view)
-				x1 =  int((x_cords[0] - self.bev_y_range[0])/(self.bev_resolution[0]))
-				x2 =  int((x_cords[1] - self.bev_y_range[0])/(self.bev_resolution[0]))
-				x3 =  int((x_cords[2] - self.bev_y_range[0])/(self.bev_resolution[0]))
-				x4 =  int((x_cords[3] - self.bev_y_range[0])/(self.bev_resolution[0]))
-
-				y1 =  int((z_cords[0] - self.bev_x_range[0])/(self.bev_resolution[0]))
-				y2 =  int((z_cords[1] - self.bev_x_range[0])/(self.bev_resolution[0]))
-				y3 =  int((z_cords[2] - self.bev_x_range[0])/(self.bev_resolution[0]))
-				y4 =  int((z_cords[3] - self.bev_x_range[0])/(self.bev_resolution[0]))
+				
 				if self.vis:
+					bird_view = self.gen_bird_view(pts=lidar_dict['lidar_pts'],use_bev=True,cur_bev=bird_view)
+					x1 =  int((x_cords[0] - self.bev_y_range[0])/(self.bev_resolution[0]))
+					x2 =  int((x_cords[1] - self.bev_y_range[0])/(self.bev_resolution[0]))
+					x3 =  int((x_cords[2] - self.bev_y_range[0])/(self.bev_resolution[0]))
+					x4 =  int((x_cords[3] - self.bev_y_range[0])/(self.bev_resolution[0]))
+
+					y1 =  int((z_cords[0] - self.bev_x_range[0])/(self.bev_resolution[0]))
+					y2 =  int((z_cords[1] - self.bev_x_range[0])/(self.bev_resolution[0]))
+					y3 =  int((z_cords[2] - self.bev_x_range[0])/(self.bev_resolution[0]))
+					y4 =  int((z_cords[3] - self.bev_x_range[0])/(self.bev_resolution[0]))
+						
+					color = (0,0,255)
 					cv2.line(bird_view,(x1,y1),(x2,y2),color,2)
 					cv2.line(bird_view,(x2,y2),(x3,y3),color,2)
 					cv2.line(bird_view,(x3,y3),(x4,y4),color,2)
 					cv2.line(bird_view,(x4,y4),(x1,y1),color,2)
 			
-				pts_in_2d = self.compute_3d_vertices(label_info['yaw'][i],translation,(label_info['l'][i],label_info['w'][i],label_info['h'][i]),P)
-				if self.vis:
+					pts_in_2d = self.compute_3d_vertices(label_info['yaw'][i],translation,(label_info['l'][i],label_info['w'][i],label_info['h'][i]),P)
 					self.draw_3d_box(img_bgr,pts_in_2d.astype(np.int32))
+					
 			if self.vis:	
 				cv2.imwrite(os.path.join(self.dump_path,'bev_{}.png').format(file_id),bird_view)
 				cv2.imwrite(os.path.join(self.dump_path,'bgr_{}.png').format(file_id),img_bgr)
@@ -325,7 +331,7 @@ class DataLoader(object):
 			
 
 	def get_all_annt(self):
-
+		# Not Used
 		idx_list = []
 		dim_list = []
 		hf_idx = h5py.File(self.gt_path + self.seq_id + '_' + 'idx.h5', 'w')
