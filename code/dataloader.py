@@ -90,9 +90,9 @@ if __name__ == '__main__':
 	transform = transforms.Compose([
 		transforms.ToTensor()
 	])
-	lidar_pts_path = "/tmp/DenseLidarNet/lidar_pts"
-	tf_lidar_pts_path = "/tmp/tf_lidar_pts"
-	bbox_info_path = "/tmp/DenseLidarNet/bbox_info"
+	lidar_pts_path = "../data/lidar_pts"
+	tf_lidar_pts_path = "../data/tf_lidar_pts"
+	bbox_info_path = "../data/bbox_info"
 
 	dataset = DenseLidarGen(lidar_pts_path,tf_lidar_pts_path,bbox_info_path,transform)
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=1, collate_fn=dataset.collate_fn)

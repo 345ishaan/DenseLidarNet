@@ -24,7 +24,6 @@ import torchvision
 import torchvision.transforms as transforms
 from dataloader import DenseLidarGen
 
-# from DenseLidarNet import DenseLidarNet
 from chamfer_loss import *
 from vfe_layer import *
 
@@ -59,6 +58,9 @@ class Main(object):
 		if not os.path.exists(directory):
 			os.makedirs(directory)
 		self.logger = Logger('directory')
+		self.num_gpus = torch.cuda.device_count()
+		self.gpus = np.arange(self.num_gpus).tolist()
+		self.gather_device = self.gpus[0]
 
 	def plot_stats(self, epoch, data_1, data_2, label_1, label_2, plt):
 		plt.plot(range(epoch), data_1, 'r--', label=label_1)
@@ -74,32 +76,57 @@ class Main(object):
 		# self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 		if self.use_cuda:
 			self.net.cuda()
-        
+		
 	def adjust_learning_rate(self, optimizer, epoch, base_lr):
 		"""Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
 		lr = base_lr * (0.1 ** (epoch // 400))
 		for param_group in optimizer.param_groups:
 			param_group['lr'] = lr
-            
+
+	def prepare_gpu_input(self, all_voxel_data, all_voxel_mask, all_voxel_indices):
+		batch_size = self.batch_size
+		num_gpus = self.num_gpus
+		batch_per_gpu = batch_size/num_gpus
+		batch_voxel_features = []
+		batch_voxel_mask = []
+		batch_voxel_indices = []
+		batch_scatter_ops = []
+		templist_1 = []; templist_2 = []; templist_3 = []; templist_4 = []
+
+		inc = 0
+		for it,(blob1, blob2, blob3) in enumerate(zip(all_voxel_data, all_voxel_mask, all_voxel_indices)):
+			which_gpu = self.gpus[it/(batch_size/num_gpus)]
+			templist_1.append(Variable(blob1.cuda(which_gpu,async=True)))
+			templist_2.append(Variable(blob1.cuda(which_gpu,async=True)))
+			blob3 += self.num_voxels_x*self.num_voxels_y*inc
+			templist_3.append(Variable(blob3.cuda(which_gpu,async=True)))
+			inc += 1
+			inc %= (batch_size/num_gpus)
+
+			if inc == 0:
+				batch_voxel_features.append(torch.cat(templist_1,0))
+				batch_voxel_mask.append(torch.cat(templist_2,0))
+				batch_voxel_indices.append(torch.cat(templist_3,0))
+				batch_scatter_ops.append(Variable(torch.zeros((batch_size/num_gpus)*self.num_voxels_x*self.num_voxels_y,self.vfe_embedding_size).cuda(which_gpu,async=True)))
+				templist_1 = []; templist_2 = []; templist_3 = []; templist_4 = []
+
+		return zip(batch_voxel_features, batch_voxel_mask, batch_voxel_indices, batch_scatter_ops)
+
+	def customdataparallel(self,zipped_input):
+		# Distributes the model in multiple gpus
+		replicas = torch.nn.parallel.replicate(self.net,self.gpus)
+		# Distribute the input equally to all gpus
+		outputs = torch.nn.parallel.parallel_apply(replicas,zipped_input)
+		# Gather the output in one device
+		return torch.nn.parallel.gather(outputs,self.gather_device)
+
 	def train(self, epoch):
 		train_loss = []
 		self.net.train()
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.train_dataloader):
-			#brk()
-			voxel_features = Variable(voxel_features)
-			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
-			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
-			vfe_output = Variable(torch.zeros(chamfer_gt.size(0)*self.h*self.w,128))
-            
-			if self.use_cuda:
-				voxel_features = voxel_features.cuda()
-				voxel_mask = voxel_mask.cuda()
-				voxel_indices = voxel_indices.cuda()
-				vfe_output = vfe_output.cuda()
-
-			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
-
-			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
+			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
+			hallucinations = self.customdataparallel(zipped_input)
+			loss = self.criterion(hallucinations, Variable(chamfer_gt).cuda(device=self.gather_device))
 			train_loss += [loss.data[0]/chamfer_gt.size(0)]
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(train) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
@@ -107,36 +134,18 @@ class Main(object):
 					time.ctime()[:-8], epoch, batch_idx, len(self.train_dataloader), net_loss=loss.data[0])
 				print(progress_stats)
 			self.optimizer.zero_grad()
-			#brk()
 			loss.backward()
-			#brk()
 			self.optimizer.step()
-
-			#torch.save(self.net.state_dict(), '../../model_state.pth')
-			#torch.save(self.optimizer.state_dict(), '../../opt_state.pth')
-            
-			#for param in self.net.parameters():
-			#	print(param.data)			
+			
 		return train_loss
 
 	def validate(self):
 		val_loss = []
 		self.net.eval()
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.val_dataloader):
-			voxel_features = Variable(voxel_features)
-			voxel_mask = Variable(voxel_mask.squeeze()).cuda() 
-			voxel_indices = Variable(voxel_indices.unsqueeze(1).expand(voxel_indices.size()[0],128))
-			vfe_output = Variable(torch.zeros(chamfer_gt.size(0)*self.h*self.w,128))
-            
-			if self.use_cuda:
-				voxel_features = voxel_features.cuda()
-				voxel_mask = voxel_mask.cuda()
-				voxel_indices = voxel_indices.cuda()
-				vfe_output = vfe_output.cuda()
-
-			xyz_output= self.net.forward(voxel_features,voxel_mask,voxel_indices,vfe_output)
-
-			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda() if self.use_cuda else Variable(chamfer_gt))
+			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
+			hallucinations = self.customdataparallel(zipped_input)
+			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda(device=self.gather_device))
 			val_loss += [loss.data[0]/chamfer_gt.size(0)]
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(val) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
@@ -145,7 +154,7 @@ class Main(object):
 				print(progress_stats)
 		return val_loss
 
-        
+		
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(description='Dense LiDarNet Training')
@@ -157,7 +166,7 @@ if __name__ == '__main__':
 	parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
 	parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
 	args = parser.parse_args()
-    
+	
 	print ("****************************************************************************************")
 	print ("Using Learning Rate     ==============> {}".format(args.lr))
 	print ("Loading from checkpoint ==============> {}".format(args.resume))
@@ -191,7 +200,7 @@ if __name__ == '__main__':
 
 	for epoch in range(args.start_epoch, args.epochs + args.start_epoch):
 		net.adjust_learning_rate(net.optimizer, epoch, args.lr)
-        
+		
 		# uncomment following two series of code block to verify if backpropgation is happening properly
 		# old_params = []
 		# for i in range(len(list(net.net.parameters()))):
@@ -207,7 +216,7 @@ if __name__ == '__main__':
 		#val_stats = net.validate()
 		#val_loss += [val_stats]
 		#print("VALIDATE avg loss = ", np.mean(val_stats))
-        
+		
 		# remember best val loss and save checkpoint
 		is_best = val_stats < best_loss
 		best_loss = max(val_stats, best_loss)
@@ -219,7 +228,7 @@ if __name__ == '__main__':
 			'best_loss': best_loss,
 			'optimizer' : net.optimizer.state_dict(),
 		}, is_best)
-        
+		
 		plt.figure(figsize=(12,12))
 		net.plot_stats(epoch+1, train_loss, None, 'train_loss', 'val_loss', plt)
 		plt.savefig('progress/' + net.run_time + '/stats.jpg')
