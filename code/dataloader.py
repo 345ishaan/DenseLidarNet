@@ -44,7 +44,7 @@ class DenseLidarGen(data.Dataset):
 		self.max_pts_in_voxel = 35
 		
 		#This number can not go bigger than the threshold set while dumping data
-		self.max_pred_pts = 500
+		self.max_pred_pts = 2000
 
 	def __getitem__(self,idx):
 		fname = self.tf_lidar_pts_files[idx].split('/')[-1]
@@ -52,7 +52,10 @@ class DenseLidarGen(data.Dataset):
 		lidar_pts = np.load(os.path.join(self.lidar_pts_path,fname))
 		voxel_features,voxel_indices,voxel_mask = voxelize_lidar(lidar_pts,tf_lidar_pts,\
 			self.dx,self.dz,self.max_x,self.min_x,self.max_y,self.min_y,self.max_z,self.min_z,self.max_pts_in_voxel)
-		gt_pts = tf_lidar_pts[np.random.choice(tf_lidar_pts.shape[0],self.max_pred_pts,replace=False),:3]
+		replace = True
+		if tf_lidar_pts.shape[0] > self.max_pred_pts:
+			replace = False
+		gt_pts = tf_lidar_pts[np.random.choice(tf_lidar_pts.shape[0],self.max_pred_pts,replace=replace),:3]
 		return voxel_features,voxel_indices,voxel_mask,gt_pts
 	
 

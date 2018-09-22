@@ -25,7 +25,7 @@ import torchvision.transforms as transforms
 from dataloader import DenseLidarGen
 
 from chamfer_loss import *
-from vfe_layer import *
+from model import *
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
 	torch.save(state, filename)
@@ -36,7 +36,7 @@ class Main(object):
 
 	def __init__(self, args):
 
-		self.batch_size = 2
+		self.batch_size = 20
 		self.args = args
 		self.max_pts_in_voxel = 20
 		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
@@ -52,7 +52,7 @@ class Main(object):
 		# self.load_model()
 		self.num_voxels_z = 20
 		self.num_voxels_x = 10
-                self.vfe_embedding_size = 32
+                self.vfe_embedding_size = 128
 		self.use_cuda = torch.cuda.is_available()
                 self.load_model()
                 self.criterion = ChamferLoss()
@@ -101,7 +101,7 @@ class Main(object):
 		for it,(blob1, blob2, blob3) in enumerate(zip(all_voxel_data, all_voxel_mask, all_voxel_indices)):
 			which_gpu = self.gpus[it/(batch_size/num_gpus)]
 			templist_1.append(Variable(blob1.cuda(which_gpu,async=True)))
-			templist_2.append(Variable(blob1.cuda(which_gpu,async=True)))
+			templist_2.append(Variable(blob2.cuda(which_gpu,async=True)))
 			blob3 += self.num_voxels_x*self.num_voxels_z*inc
 			templist_3.append(Variable(blob3.cuda(which_gpu,async=True)))
 			inc += 1
@@ -111,7 +111,7 @@ class Main(object):
 				batch_voxel_features.append(torch.cat(templist_1,0))
 				batch_voxel_mask.append(torch.cat(templist_2,0))
 				batch_voxel_indices.append(torch.cat(templist_3,0))
-				batch_scatter_ops.append(Variable(torch.zeros((batch_size/num_gpus), self.vfe_embedding_size, self.num_voxels_z, self.num_voxels_x).cuda(which_gpu,async=True)))
+				batch_scatter_ops.append(Variable(torch.zeros((batch_size/num_gpus) * self.num_voxels_x * self.num_voxels_z, self.vfe_embedding_size).cuda(which_gpu,async=True)))
 				templist_1 = []; templist_2 = []; templist_3 = []; templist_4 = []
 
 		return zip(batch_voxel_features, batch_voxel_mask, batch_voxel_indices, batch_scatter_ops)
@@ -129,16 +129,9 @@ class Main(object):
 		self.net.train()
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.train_dataloader):
 			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
-                        for ip1, ip2, ip3, ip4 in zipped_input:
-                            print (ip1.size())
-                            print (ip2.size())
-                            print (ip3.size())
-                            print (ip4.size())
-
-                        print ("Got Train Batch!")
-                        continue
 			hallucinations = self.customdataparallel(zipped_input)
-			loss = self.criterion(hallucinations, Variable(chamfer_gt).cuda(device=self.gather_device))
+			chamfer_gt = torch.FloatTensor(chamfer_gt)
+			loss = self.criterion(hallucinations, Variable(chamfer_gt).cuda(self.gather_device))
 			train_loss += [loss.data[0]/chamfer_gt.size(0)]
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(train) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
@@ -156,10 +149,9 @@ class Main(object):
 		self.net.eval()
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.val_dataloader):
 			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
-                        print ("Got Val Batch")
-                        continue
 			hallucinations = self.customdataparallel(zipped_input)
-			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda(device=self.gather_device))
+			chamfer_gt = torch.FloatTensor(chamfer_gt)
+			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda(self.gather_device))
 			val_loss += [loss.data[0]/chamfer_gt.size(0)]
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(val) Time: {0} Epoch: [{1}][{2}/{3}]\t' \

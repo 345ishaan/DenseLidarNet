@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 sys.path.insert(0,'../')
-from vfe_layer import *
+from model import *
 
 net = DenseLidarNet()
 state = net.state_dict()
