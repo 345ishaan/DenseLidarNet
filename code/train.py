@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import time
-from logger import Logger
+#from logger import Logger
 import shutil
 import sys
 
@@ -36,28 +36,32 @@ class Main(object):
 
 	def __init__(self, args):
 
-		self.batch_size = 128
+		self.batch_size = 2
 		self.args = args
 		self.max_pts_in_voxel = 20
 		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
 		self.transform = transforms.Compose([transforms.ToTensor()])
-		self.train_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
-		self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8, collate_fn=self.train_dataset.collate_fn)
-		self.val_dataset = DenseLidarGen('../../DenseLidarNet_data/all_annt_train.pickle','/home/ishan/images',self.transform)
-		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=8, collate_fn=self.val_dataset.collate_fn)
+		self.train_dataset = DenseLidarGen(args.train_lidar_pts_path, args.train_tf_lidar_pts_path,\
+                                     args.train_bbox_info_path, self.transform)
+                self.val_dataset = DenseLidarGen(args.val_lidar_pts_path, args.val_tf_lidar_pts_path,\
+                                    args.val_bbox_info_path, self.transform)
+                
+		self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.train_dataset.collate_fn)
+		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=1, collate_fn=self.val_dataset.collate_fn)
 		
 		# self.load_model()
-		self.h = 20
-		self.w = 10
-		self.use_cuda = torch.cuda.is_available()        
-		self.load_model()
-		self.criterion = ChamferLoss()
+		self.num_voxels_z = 20
+		self.num_voxels_x = 10
+                self.vfe_embedding_size = 32
+		self.use_cuda = torch.cuda.is_available()
+                self.load_model()
+                self.criterion = ChamferLoss()
 		self.optimizer = optim.SGD(self.net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 		self.run_time = time.ctime().replace(' ', '_')[:-8]
 		directory = 'progress/' + self.run_time
 		if not os.path.exists(directory):
 			os.makedirs(directory)
-		self.logger = Logger('directory')
+		#self.logger = Logger('directory')
 		self.num_gpus = torch.cuda.device_count()
 		self.gpus = np.arange(self.num_gpus).tolist()
 		self.gather_device = self.gpus[0]
@@ -98,7 +102,7 @@ class Main(object):
 			which_gpu = self.gpus[it/(batch_size/num_gpus)]
 			templist_1.append(Variable(blob1.cuda(which_gpu,async=True)))
 			templist_2.append(Variable(blob1.cuda(which_gpu,async=True)))
-			blob3 += self.num_voxels_x*self.num_voxels_y*inc
+			blob3 += self.num_voxels_x*self.num_voxels_z*inc
 			templist_3.append(Variable(blob3.cuda(which_gpu,async=True)))
 			inc += 1
 			inc %= (batch_size/num_gpus)
@@ -107,7 +111,7 @@ class Main(object):
 				batch_voxel_features.append(torch.cat(templist_1,0))
 				batch_voxel_mask.append(torch.cat(templist_2,0))
 				batch_voxel_indices.append(torch.cat(templist_3,0))
-				batch_scatter_ops.append(Variable(torch.zeros((batch_size/num_gpus)*self.num_voxels_x*self.num_voxels_y,self.vfe_embedding_size).cuda(which_gpu,async=True)))
+				batch_scatter_ops.append(Variable(torch.zeros((batch_size/num_gpus), self.vfe_embedding_size, self.num_voxels_z, self.num_voxels_x).cuda(which_gpu,async=True)))
 				templist_1 = []; templist_2 = []; templist_3 = []; templist_4 = []
 
 		return zip(batch_voxel_features, batch_voxel_mask, batch_voxel_indices, batch_scatter_ops)
@@ -125,6 +129,14 @@ class Main(object):
 		self.net.train()
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.train_dataloader):
 			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
+                        for ip1, ip2, ip3, ip4 in zipped_input:
+                            print (ip1.size())
+                            print (ip2.size())
+                            print (ip3.size())
+                            print (ip4.size())
+
+                        print ("Got Train Batch!")
+                        continue
 			hallucinations = self.customdataparallel(zipped_input)
 			loss = self.criterion(hallucinations, Variable(chamfer_gt).cuda(device=self.gather_device))
 			train_loss += [loss.data[0]/chamfer_gt.size(0)]
@@ -144,6 +156,8 @@ class Main(object):
 		self.net.eval()
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.val_dataloader):
 			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
+                        print ("Got Val Batch")
+                        continue
 			hallucinations = self.customdataparallel(zipped_input)
 			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda(device=self.gather_device))
 			val_loss += [loss.data[0]/chamfer_gt.size(0)]
@@ -165,6 +179,18 @@ if __name__ == '__main__':
 	parser.add_argument('--print-freq', '-p', default=10, type=int, metavar='N', help='print frequency (default: 10)')
 	parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
 	parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', help='evaluate model on validation set')
+        parser.add_argument('-tp1', dest='train_lidar_pts_path', default='', type=str, help='Train Lidar Pts Path')
+
+        parser.add_argument('-tp2', dest='train_tf_lidar_pts_path', default='', type=str, help='Train TF Lidar Pts Path')
+        
+        parser.add_argument('-tp3', dest='train_bbox_info_path', default='', type=str, help='Train BBox Info Path')
+
+        parser.add_argument('-vp1', dest='val_lidar_pts_path', default='', type=str, help='Val Lidar Pts Path')
+
+        parser.add_argument('-vp2', dest='val_tf_lidar_pts_path', default='', type=str, help='Val TF Lidar Pts Path')
+                                                                                                                    
+        parser.add_argument('-vp3', dest='val_bbox_info_path', default='', type=str, help='Val Bbox Info Path')
+        
 	args = parser.parse_args()
 	
 	print ("****************************************************************************************")
@@ -233,4 +259,3 @@ if __name__ == '__main__':
 		net.plot_stats(epoch+1, train_loss, None, 'train_loss', 'val_loss', plt)
 		plt.savefig('progress/' + net.run_time + '/stats.jpg')
 		plt.clf()
-
