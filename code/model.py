@@ -95,7 +95,7 @@ class VFE(nn.Module):
 
 class DenseLidarNet(nn.Module):
 
-	def __init__(self,max_pts_in_voxel=10):
+	def __init__(self,max_pts_in_voxel=5):
 		super(DenseLidarNet, self).__init__()
 		self.max_pts_in_voxel= max_pts_in_voxel
 

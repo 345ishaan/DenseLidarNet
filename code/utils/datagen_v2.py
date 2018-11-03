@@ -14,16 +14,16 @@ class DataLoader(object):
 
 	def __init__(self,train_val_split=0.2):
 		
-		self.kitti_img_dir = '/tmp/data/KITTI_3D/images/training/image_2/'
-		self.kitti_calib_dir = '/tmp/data/KITTI_3D/calibration/training/calib/'
-		self.kitti_label_dir = '/tmp/data/KITTI_3D/labels/training/label_2/'
-		self.kitti_lidar_dir = '/tmp/data/KITTI_3D/lidar/training/velodyne'
+		self.kitti_img_dir = '../../data/images/training/image_2/'
+		self.kitti_calib_dir = '../../data/calibration/training/calib/'
+		self.kitti_label_dir = '../../data/labels/training/label_2/'
+		self.kitti_lidar_dir = '../../data/lidar/training/velodyne'
 		self.train_label_files = sorted(glob.glob(os.path.join(self.kitti_label_dir,"*.txt")))		
 		self.bev_resolution=[0.1,0.1]
 		self.bev_x_range=[-70.0,70.0]
 		self.bev_y_range=[-30.0,30.0]
 
-		self.dump_dir = '/tmp/DenseLidarNet'
+		self.dump_dir = '../../data/DenseLidarNet'
 
 		self.counter =0
 		self.max_iters = sys.maxint
@@ -39,7 +39,7 @@ class DataLoader(object):
 		self.check_path(self.lidar_pts_path)
 		self.check_path(self.bbox_info_path)
 		self.check_path(self.tf_lidar_pts_path)
-		self.min_num_lidar_pts = 500
+		self.min_num_lidar_pts = 1000
 				
 
 	def read_kitti_labels(self,index):

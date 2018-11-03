@@ -25,6 +25,7 @@ import torchvision.transforms as transforms
 from dataloader import DenseLidarGen
 
 from chamfer_loss import *
+from iou_loss import *
 from model import *
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
@@ -36,18 +37,20 @@ class Main(object):
 
 	def __init__(self, args):
 
-		self.batch_size = 20
+		self.batch_size = 126
+		self.val_batch_size = 126
 		self.args = args
 		self.max_pts_in_voxel = 20
 		#normalize  = transforms.Normalize((0.485,0.456,0.406), (0.229,0.224,0.225)
 		self.transform = transforms.Compose([transforms.ToTensor()])
+		#print (args.train_lidar_pts_path, args.train_tf_lidar_pts_path, args.train_bbox_info_path)
 		self.train_dataset = DenseLidarGen(args.train_lidar_pts_path, args.train_tf_lidar_pts_path,\
                                      args.train_bbox_info_path, self.transform)
                 self.val_dataset = DenseLidarGen(args.val_lidar_pts_path, args.val_tf_lidar_pts_path,\
                                     args.val_bbox_info_path, self.transform)
                 
 		self.train_dataloader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=1, collate_fn=self.train_dataset.collate_fn)
-		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=1, collate_fn=self.val_dataset.collate_fn)
+		self.val_dataloader = torch.utils.data.DataLoader(self.val_dataset, batch_size=self.val_batch_size, shuffle=False, num_workers=1, collate_fn=self.val_dataset.collate_fn)
 		
 		# self.load_model()
 		self.num_voxels_z = 20
@@ -56,7 +59,9 @@ class Main(object):
 		self.use_cuda = torch.cuda.is_available()
                 self.load_model()
                 self.criterion = ChamferLoss()
-		self.optimizer = optim.SGD(self.net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
+		self.iou_criterion = iOULoss()
+		# self.optimizer = optim.SGD(self.net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
+		self.optimizer = optim.Adam(self.net.parameters(), lr=args.lr)
 		self.run_time = time.ctime().replace(' ', '_')[:-8]
 		directory = 'progress/' + self.run_time
 		if not os.path.exists(directory):
@@ -83,7 +88,8 @@ class Main(object):
 		
 	def adjust_learning_rate(self, optimizer, epoch, base_lr):
 		"""Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-		lr = base_lr * (0.1 ** (epoch // 400))
+		#lr = base_lr * (0.1 ** (epoch // 400))
+		lr = base_lr
 		for param_group in optimizer.param_groups:
 			param_group['lr'] = lr
 
@@ -96,7 +102,7 @@ class Main(object):
 		batch_voxel_indices = []
 		batch_scatter_ops = []
 		templist_1 = []; templist_2 = []; templist_3 = []; templist_4 = []
-
+		#print ("All voxel data length:", len(all_voxel_data))
 		inc = 0
 		for it,(blob1, blob2, blob3) in enumerate(zip(all_voxel_data, all_voxel_mask, all_voxel_indices)):
 			which_gpu = self.gpus[it/(batch_size/num_gpus)]
@@ -105,21 +111,25 @@ class Main(object):
 			blob3 += self.num_voxels_x*self.num_voxels_z*inc
 			templist_3.append(Variable(blob3.cuda(which_gpu,async=True)))
 			inc += 1
+			#print ("inc ==> ", inc)
 			inc %= (batch_size/num_gpus)
+			#print ("batch_size and num_gpus", batch_size, num_gpus, inc)
 
 			if inc == 0:
+				#print ("In inc ****")
 				batch_voxel_features.append(torch.cat(templist_1,0))
 				batch_voxel_mask.append(torch.cat(templist_2,0))
 				batch_voxel_indices.append(torch.cat(templist_3,0))
 				batch_scatter_ops.append(Variable(torch.zeros((batch_size/num_gpus) * self.num_voxels_x * self.num_voxels_z, self.vfe_embedding_size).cuda(which_gpu,async=True)))
 				templist_1 = []; templist_2 = []; templist_3 = []; templist_4 = []
-
+		#print ("batch_voxel_features ==> ", len(batch_voxel_features))
 		return zip(batch_voxel_features, batch_voxel_mask, batch_voxel_indices, batch_scatter_ops)
 
 	def customdataparallel(self,zipped_input):
 		# Distributes the model in multiple gpus
 		replicas = torch.nn.parallel.replicate(self.net,self.gpus)
 		# Distribute the input equally to all gpus
+		#print ("zipped input size: ", len(zipped_input))
 		outputs = torch.nn.parallel.parallel_apply(replicas,zipped_input)
 		# Gather the output in one device
 		return torch.nn.parallel.gather(outputs,self.gather_device)
@@ -127,7 +137,11 @@ class Main(object):
 	def train(self, epoch):
 		train_loss = []
 		self.net.train()
+		print ("In train")
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.train_dataloader):
+			#print ("batch_idx  ==> ", batch_idx)
+			if len(voxel_features) != self.batch_size:
+				continue
 			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
 			hallucinations = self.customdataparallel(zipped_input)
 			chamfer_gt = torch.FloatTensor(chamfer_gt)
@@ -146,18 +160,28 @@ class Main(object):
 
 	def validate(self):
 		val_loss = []
+		iou_loss = []
 		self.net.eval()
 		for batch_idx,(voxel_features,voxel_mask,voxel_indices, chamfer_gt) in enumerate(self.val_dataloader):
+			print("Batch idx =======>", batch_idx)
+			if len(voxel_features) != self.val_batch_size:
+				continue
 			zipped_input = self.prepare_gpu_input(voxel_features, voxel_mask, voxel_indices)
 			hallucinations = self.customdataparallel(zipped_input)
 			chamfer_gt = torch.FloatTensor(chamfer_gt)
-			loss = self.criterion(xyz_output, Variable(chamfer_gt).cuda(self.gather_device))
+			loss = self.criterion(hallucinations, Variable(chamfer_gt).cuda(self.gather_device))
+			iou = self.iou_criterion.forward(hallucinations, Variable(chamfer_gt).cuda(self.gather_device)).data.cpu().numpy()
+			np.save("gt.npy", chamfer_gt.data.cpu().numpy())
+			np.save("validation.npy", hallucinations.data.cpu().numpy())
 			val_loss += [loss.data[0]/chamfer_gt.size(0)]
+			iou_loss = np.append(iou_loss, iou) 
+			print ("Here")
 			if batch_idx % self.args.print_freq == 0:
 				progress_stats = '(val) Time: {0} Epoch: [{1}][{2}/{3}]\t' \
 					'Loss {loss:.4f}\t'.format(
-					time.ctime()[:-8], epoch, batch_idx, len(self.val_dataloader), loss=loss.data[0])
+					time.ctime()[:-8], 1 , batch_idx, len(self.val_dataloader), loss=loss.data[0])
 				print(progress_stats)
+		np.save("iou_loss.npy", iou_loss)
 		return val_loss
 
 		
@@ -226,18 +250,18 @@ if __name__ == '__main__':
 		old = time.time()    
 		train_stats = net.train(epoch)
 		train_loss += [np.mean(train_stats)]
-		print(time.time() - old)
+		#print(time.time() - old)
 		# for i in range(len(list(net.net.parameters()))):
 		# 	print("weight update for parameter : ", i, not torch.equal(old_params[i].data, list(net.net.parameters())[i].data))
 
 		val_stats = 0
-		#val_stats = net.validate()
-		#val_loss += [val_stats]
-		#print("VALIDATE avg loss = ", np.mean(val_stats))
+		val_stats = net.validate()
+		val_loss += [val_stats]
+		print("VALIDATE avg loss = ", np.mean(val_stats))
 		
 		# remember best val loss and save checkpoint
 		is_best = val_stats < best_loss
-		best_loss = max(val_stats, best_loss)
+		best_loss = min(val_stats, best_loss)
 		save_checkpoint({
 			'train_loss':train_loss,
 			'val_loss':val_loss,
@@ -247,7 +271,7 @@ if __name__ == '__main__':
 			'optimizer' : net.optimizer.state_dict(),
 		}, is_best)
 		
-		plt.figure(figsize=(12,12))
-		net.plot_stats(epoch+1, train_loss, None, 'train_loss', 'val_loss', plt)
-		plt.savefig('progress/' + net.run_time + '/stats.jpg')
-		plt.clf()
+		#plt.figure(figsize=(12,12))
+		#net.plot_stats(epoch+1, train_loss, None, 'train_loss', 'val_loss', plt)
+		#plt.savefig('progress/' + net.run_time + '/stats.jpg')
+		#plt.clf()
